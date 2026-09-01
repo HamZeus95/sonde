@@ -4,7 +4,10 @@
 # security reviewer will read the Dockerfile before the README. There is no
 # shell, no package manager and nothing to escalate to: the image is one static
 # binary and a CA bundle.
-FROM golang:1.27-alpine AS build
+# Built on the runner's own architecture and cross-compiled to the target: the
+# binary is CGO-free, so this costs nothing and avoids emulating a whole
+# toolchain under QEMU to produce the arm64 image.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 
 # Dependencies first, so a code change does not re-download the module cache.
@@ -13,8 +16,10 @@ RUN go mod download
 
 COPY . .
 ARG VERSION=dev
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 # CGO off, so the binary is static and the runtime image needs no libc.
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \
       -o /out/sonde ./cmd/sonde
 

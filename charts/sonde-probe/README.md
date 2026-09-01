@@ -7,6 +7,26 @@ results to a control plane. **It listens on no port**, makes only outbound
 connections, and no credential it holds is ever sent anywhere — so there is no
 Service, no Ingress, and no ingress rule to write.
 
+## The image
+
+Published to `ghcr.io/hamzeus95/sonde` on every release tag, multi-arch
+(amd64 and arm64), signed with cosign and carrying an SBOM. The chart pulls the
+tag matching its `appVersion`, so a chart version always has an image.
+
+```bash
+cosign verify ghcr.io/hamzeus95/sonde:0.1.0 \
+  --certificate-identity-regexp 'https://github.com/HamZeus95/sonde/.github/workflows/release.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Before the first release exists, build and load it yourself:
+
+```bash
+docker build -t sonde-probe:dev .
+k3d image import sonde-probe:dev -c <cluster>
+helm install ... --set image.repository=sonde-probe --set image.tag=dev --set image.pullPolicy=Never
+```
+
 ## Install
 
 ```bash
@@ -102,6 +122,16 @@ pointing the probe at a bare IP, so the certificate still verifies:
 hostAliases:
   - ip: 172.20.0.1            # docker network inspect k3d-<cluster> --format '{{ "{{" }}range .IPAM.Config{{ "}}" }}{{ "{{" }}.Gateway{{ "}}" }}{{ "{{" }}end{{ "}}" }}'
     hostnames: ["host.k3d.internal"]
+```
+
+### Changing a value while the probe is crash-looping
+
+A StatefulSet will not roll a pod that never becomes Ready, so a probe stuck on
+a diverged chain keeps its old arguments however many times you `helm upgrade`.
+Delete the pod to apply the change:
+
+```bash
+kubectl -n sonde delete pod sonde-probe-0
 ```
 
 ### `allowChainReset`
