@@ -650,9 +650,13 @@ Closed decisions. Reopening one requires a written reason appended here, not a s
 | 34 | RLS policies are applied to every table with a `tenant_id`, discovered rather than listed, and the migration fails if one lacks a policy | Found by adding `audit_events`: the hard-coded list did not include it, so every tenant's audit log was readable by every other. A list is a thing people forget to add to; a query is not. |
 | 35 | `audit_events` and `GET /v1/audit` added to §9 and §4 | An audit log is listed as a paid feature in §12 and had nowhere to live. It records what the control plane did — enrolments, renewals, exports — which is a different question from what the checks found, and an auditor asks both. |
 
+| 36 | One probe per cluster, not one probe with several kubeconfigs | Closes the open question below, and everything already assumes it: the chart runs a StatefulSet with one identity and one chain, `probe.environment` is required, and the scheduler assigns work by environment. A probe holding several kubeconfigs would be one compromise away from several clusters, and the blast radius is the whole argument. |
+| 37 | `jobs.tenant_id` gets the foreign key the other tables have | Closes the other open question. Nothing was gained by the omission — a job for a tenant that does not exist is unrunnable — and the constraint says so at write time rather than at read time. |
+| 38 | A probe with no kubeconfig uses its in-cluster credentials for any cluster name | Found by running the chart: a pod has no kubeconfig, so the strict context matching from decision 15 failed every kubernetes check with "no kubeconfig context named prod-eu-1" — in the deployment the chart exists for. A pod is in exactly one cluster and the operator declared which environment it covers at install, so there is nothing to disambiguate. |
+| 39 | Probes are ranked by the most recent evidence they exist, not by `last_seen_at` alone | A probe that has never reported ranked below one that reported an hour ago, so replacing a probe left its queue assigned to the old row and its checks silently unverified. Enrolling a minute ago is evidence of life; not having finished a first batch is not. Unleased work now also moves to the current probe immediately rather than waiting for the old one to age out. |
+
 Open questions (answer before the phase that needs them):
-- Multi-cluster: one probe per cluster, or one probe with multiple kubeconfigs? Prefer one-per-cluster for blast radius.
-- `jobs.tenant_id` in §9 has no foreign key to `tenants(id)` while every other table does. Intentional, or an omission to fix when the schema lands?
+- None open.
 
 ---
 
