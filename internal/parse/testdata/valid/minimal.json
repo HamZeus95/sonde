@@ -1,0 +1,21 @@
+{
+  "path": "testdata/valid/minimal.md",
+  "content_hash": "bf55f8f7bc6386f42441e0edc5d5a2e5989fad2496e98224d646063fdc60d924",
+  "meta": {
+    "version": 1,
+    "id": "minimal"
+  },
+  "checks": [
+    {
+      "id": "only-check",
+      "kind": "http",
+      "check": "status_is",
+      "spec": {
+        "url": "https://status.corp.example/health?token=redacted#top"
+      },
+      "canonical": "http://status.corp.example/health",
+      "line": 9,
+      "enabled": true
+    }
+  ]
+}

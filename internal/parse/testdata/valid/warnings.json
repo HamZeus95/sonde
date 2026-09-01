@@ -1,0 +1,70 @@
+{
+  "path": "testdata/valid/warnings.md",
+  "content_hash": "7e6d812d59b3d049e01191489d4765d4c326c50ee089e4a95d4f6d8106da2de2",
+  "meta": {
+    "version": 1,
+    "id": "warnings"
+  },
+  "checks": [
+    {
+      "id": "unindexable",
+      "kind": "kubernetes",
+      "check": "resource_exists",
+      "spec": {
+        "resource": "deployment/payments-api",
+        "namespace": "payments"
+      },
+      "line": 13,
+      "enabled": true
+    },
+    {
+      "id": "unknown-fields",
+      "kind": "dns",
+      "check": "record_exists",
+      "spec": {
+        "name": "db-primary.internal",
+        "type": "CNAME"
+      },
+      "canonical": "dns://db-primary.internal/CNAME",
+      "line": 21,
+      "enabled": true
+    },
+    {
+      "id": "unindexable-group",
+      "kind": "identity",
+      "check": "group_exists",
+      "spec": {
+        "provider": "keycloak",
+        "group": "sre-oncall"
+      },
+      "line": 31,
+      "enabled": true
+    }
+  ],
+  "warnings": [
+    {
+      "line": 1,
+      "message": "unknown frontmatter field \"critcality\" under sonde"
+    },
+    {
+      "line": 13,
+      "check_id": "unindexable",
+      "message": "check will run but will not appear in the reverse index: no cluster: set cluster on the check, or environment in the runbook frontmatter"
+    },
+    {
+      "line": 21,
+      "check_id": "unknown-fields",
+      "message": "unknown field \"namespaces\" for dns/record_exists"
+    },
+    {
+      "line": 21,
+      "check_id": "unknown-fields",
+      "message": "unknown field \"retries\" for dns/record_exists"
+    },
+    {
+      "line": 31,
+      "check_id": "unindexable-group",
+      "message": "check will run but will not appear in the reverse index: no realm: set realm on the check, or environment in the runbook frontmatter"
+    }
+  ]
+}

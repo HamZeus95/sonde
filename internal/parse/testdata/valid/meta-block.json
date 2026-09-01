@@ -1,0 +1,25 @@
+{
+  "path": "testdata/valid/meta-block.md",
+  "content_hash": "1a735ed66421d847ee702fedb62520c2d9d4798bccd700081cb8098b1aab0523",
+  "meta": {
+    "version": 1,
+    "id": "db-failover-wiki",
+    "owner": "team-platform",
+    "environment": "prod-eu-1",
+    "criticality": "high"
+  },
+  "checks": [
+    {
+      "id": "db-primary-record",
+      "kind": "dns",
+      "check": "record_exists",
+      "spec": {
+        "name": "db-primary.internal",
+        "type": "CNAME"
+      },
+      "canonical": "dns://db-primary.internal/CNAME",
+      "line": 16,
+      "enabled": true
+    }
+  ]
+}

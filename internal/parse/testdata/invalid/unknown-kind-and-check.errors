@@ -1,0 +1,2 @@
+testdata/invalid/unknown-kind-and-check.md:8: unknown kind "terraform": valid kinds are kubernetes, http, dns, identity, command
+testdata/invalid/unknown-kind-and-check.md:15: unknown check "resource_is_healthy" for kind "kubernetes": valid checks are resource_exists, field_equals, field_gte, can_i, secret_key_present

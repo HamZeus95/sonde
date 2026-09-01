@@ -1,0 +1,2 @@
+testdata/invalid/bad-ids.md:8: id "has a space" must start with a letter or digit and contain only letters, digits, dot, dash or underscore
+testdata/invalid/bad-ids.md:15: id "-leading-dash" must start with a letter or digit and contain only letters, digits, dot, dash or underscore

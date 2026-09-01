@@ -1,0 +1,180 @@
+{
+  "path": "testdata/valid/catalogue.md",
+  "content_hash": "8f6e8d55c6015da14e95e096a057acf75523e7120a27db624e8ff079e3602f57",
+  "meta": {
+    "version": 1,
+    "id": "catalogue",
+    "owner": "team-platform",
+    "environment": "prod-eu-1",
+    "criticality": "medium"
+  },
+  "checks": [
+    {
+      "id": "exists",
+      "kind": "kubernetes",
+      "check": "resource_exists",
+      "spec": {
+        "resource": "Deployments.apps/payments-api",
+        "namespace": "payments"
+      },
+      "canonical": "k8s://prod-eu-1/payments/deployment/payments-api",
+      "line": 12,
+      "enabled": true
+    },
+    {
+      "id": "field-equals",
+      "kind": "kubernetes",
+      "check": "field_equals",
+      "spec": {
+        "resource": "deploy/payments-api",
+        "namespace": "payments",
+        "path": "spec.template.spec.containers[0].image",
+        "value": "ghcr.io/corp/payments-api:1.4.2"
+      },
+      "canonical": "k8s://prod-eu-1/payments/deployment/payments-api",
+      "line": 20,
+      "enabled": true
+    },
+    {
+      "id": "field-gte",
+      "kind": "kubernetes",
+      "check": "field_gte",
+      "spec": {
+        "resource": "deployment/payments-api",
+        "namespace": "payments",
+        "path": "spec.replicas",
+        "value": 3
+      },
+      "canonical": "k8s://prod-eu-1/payments/deployment/payments-api",
+      "line": 30,
+      "enabled": true,
+      "timeout": "5s"
+    },
+    {
+      "id": "can-i-self",
+      "kind": "kubernetes",
+      "check": "can_i",
+      "spec": {
+        "verb": "get",
+        "resource": "pods",
+        "namespace": "payments"
+      },
+      "line": 41,
+      "enabled": true
+    },
+    {
+      "id": "can-i-group",
+      "kind": "kubernetes",
+      "check": "can_i",
+      "spec": {
+        "verb": "patch",
+        "resource": "deployments",
+        "namespace": "payments",
+        "as_group": "system:sre-oncall"
+      },
+      "line": 50,
+      "enabled": true
+    },
+    {
+      "id": "can-i-subresource",
+      "kind": "kubernetes",
+      "check": "can_i",
+      "spec": {
+        "verb": "create",
+        "resource": "pods",
+        "namespace": "data",
+        "subresource": "exec",
+        "as_group": "system:sre-oncall"
+      },
+      "line": 60,
+      "enabled": true
+    },
+    {
+      "id": "secret-key",
+      "kind": "kubernetes",
+      "check": "secret_key_present",
+      "spec": {
+        "resource": "secret/db-creds",
+        "namespace": "data",
+        "key": "PGPASSWORD"
+      },
+      "canonical": "k8s://prod-eu-1/data/secret/db-creds",
+      "line": 71,
+      "enabled": true
+    },
+    {
+      "id": "cluster-scoped",
+      "kind": "kubernetes",
+      "check": "resource_exists",
+      "spec": {
+        "resource": "namespace/payments",
+        "cluster": "prod-eu-2"
+      },
+      "canonical": "k8s://prod-eu-2/_/namespace/payments",
+      "line": 80,
+      "enabled": true
+    },
+    {
+      "id": "dashboard",
+      "kind": "http",
+      "check": "status_is",
+      "spec": {
+        "url": "HTTPS://Grafana.Corp.Example:443/d/abc123/",
+        "method": "HEAD"
+      },
+      "canonical": "http://grafana.corp.example/d/abc123",
+      "line": 88,
+      "enabled": true
+    },
+    {
+      "id": "record",
+      "kind": "dns",
+      "check": "record_exists",
+      "spec": {
+        "name": "DB-Primary.Internal.",
+        "type": "cname",
+        "expect": "db-eu-1a.internal."
+      },
+      "canonical": "dns://db-primary.internal/CNAME",
+      "line": 96,
+      "enabled": true
+    },
+    {
+      "id": "group",
+      "kind": "identity",
+      "check": "group_exists",
+      "spec": {
+        "provider": "keycloak",
+        "group": "sre-oncall",
+        "realm": "platform"
+      },
+      "canonical": "idp://keycloak/platform/group/sre-oncall",
+      "line": 105,
+      "enabled": true
+    },
+    {
+      "id": "documented-command",
+      "kind": "command",
+      "check": "parses",
+      "spec": {
+        "command": "kubectl -n payments get deploy payments-api",
+        "namespace": "payments"
+      },
+      "line": 114,
+      "enabled": true,
+      "verbose": true
+    },
+    {
+      "id": "kept-but-not-run",
+      "kind": "kubernetes",
+      "check": "resource_exists",
+      "spec": {
+        "resource": "deployment/legacy-worker",
+        "namespace": "payments"
+      },
+      "canonical": "k8s://prod-eu-1/payments/deployment/legacy-worker",
+      "line": 123,
+      "enabled": false
+    }
+  ]
+}

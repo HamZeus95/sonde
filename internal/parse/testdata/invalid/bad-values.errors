@@ -1,0 +1,5 @@
+testdata/invalid/bad-values.md:8: read sonde block: parse timeout "soon": time: invalid duration "soon"
+testdata/invalid/bad-values.md:16: http/status_is: method "POST" is not allowed: checks are read-only, use GET or HEAD
+testdata/invalid/bad-values.md:24: http/status_is: expect 9000 is not an HTTP status code
+testdata/invalid/bad-values.md:32: dns/record_exists: type "PTR" is not one of A, AAAA, CNAME, MX, NS, TXT, SRV
+testdata/invalid/bad-values.md:40: kubernetes/can_i: set at most one of as_user and as_group

@@ -1,0 +1,1 @@
+testdata/invalid/wrong-case-info.md:8: info string "Sonde" is not "sonde": the info string is case sensitive, so this block would be ignored

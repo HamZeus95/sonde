@@ -1,0 +1,6 @@
+testdata/invalid/missing-fields.md:8: kubernetes/resource_exists: resource is required
+testdata/invalid/missing-fields.md:15: id is required
+testdata/invalid/missing-fields.md:21: kubernetes/resource_exists: resource "payments-api" must be of the form type/name, such as deployment/payments-api
+testdata/invalid/missing-fields.md:29: kubernetes/can_i: resource "deployment/payments-api" must be a resource type such as deployments, not type/name: name the object with the name field, and a subresource such as exec with the subresource field
+testdata/invalid/missing-fields.md:37: kubernetes/can_i: subresource "exec/nested" must be a bare name such as exec or status
+testdata/invalid/missing-fields.md:46: sonde block is empty: it needs at least id, kind and check

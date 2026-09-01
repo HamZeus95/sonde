@@ -1,0 +1,27 @@
+{
+  "path": "testdata/valid/meta-block-and-frontmatter.md",
+  "content_hash": "920e144c4c955d5a94045e45404ffcbddc3550b3a8754e4de579a0933cccc4d4",
+  "meta": {
+    "version": 1,
+    "id": "from-frontmatter"
+  },
+  "checks": [
+    {
+      "id": "a-check",
+      "kind": "http",
+      "check": "status_is",
+      "spec": {
+        "url": "https://status.corp.example/"
+      },
+      "canonical": "http://status.corp.example",
+      "line": 16,
+      "enabled": true
+    }
+  ],
+  "warnings": [
+    {
+      "line": 11,
+      "message": "this document has both frontmatter and a sonde-runbook block; the frontmatter is used"
+    }
+  ]
+}
