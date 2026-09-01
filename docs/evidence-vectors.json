@@ -1,0 +1,58 @@
+[
+  {
+    "name": "genesis pass",
+    "probe_id": "8f14e45f-ea4d-4a1b-9c2e-0f7a6b3c1d2e",
+    "prev_hash": "",
+    "result": {
+      "runbook_id": "db-failover",
+      "check_id": "db-primary-record",
+      "status": "pass",
+      "ran_at": "2026-09-01T09:00:00Z",
+      "summary": "db-eu-1a.internal."
+    },
+    "preimage": "sonde-evidence-v1\nprev:\nprobe:8f14e45f-ea4d-4a1b-9c2e-0f7a6b3c1d2e\nrunbook:db-failover\ncheck:db-primary-record\nstatus:pass\nran_at:2026-09-01T09:00:00Z\nsummary:bfd9438a77f3a2e3cc3de0f6126203309cca4c80878a3d0e1f4f7f950f3f19f0\n",
+    "self_hash": "66d76cab6e011cf57db3e300f5dce5441cf6fea11093ce53c9972617eb3faa72"
+  },
+  {
+    "name": "fail following an entry",
+    "probe_id": "8f14e45f-ea4d-4a1b-9c2e-0f7a6b3c1d2e",
+    "prev_hash": "3b1f8a0c2d4e6f8a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a",
+    "result": {
+      "runbook_id": "payments-scale-up",
+      "check_id": "oncall-can-scale",
+      "status": "fail",
+      "ran_at": "2026-09-01T09:15:30Z",
+      "summary": "system:sre-oncall cannot patch deployments in payments"
+    },
+    "preimage": "sonde-evidence-v1\nprev:3b1f8a0c2d4e6f8a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a\nprobe:8f14e45f-ea4d-4a1b-9c2e-0f7a6b3c1d2e\nrunbook:payments-scale-up\ncheck:oncall-can-scale\nstatus:fail\nran_at:2026-09-01T09:15:30Z\nsummary:04bcacafa081edecd128aa63afd6f59366c0cf91fa6a3447c8130025712b95c3\n",
+    "self_hash": "c321719b21b9155d402ee7532eca954dfd0bdd798e98580670c75cbd65138c06"
+  },
+  {
+    "name": "error with an empty summary",
+    "probe_id": "00000000-0000-4000-8000-000000000000",
+    "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "result": {
+      "runbook_id": "rb",
+      "check_id": "c",
+      "status": "error",
+      "ran_at": "2026-01-01T00:00:00Z",
+      "summary": ""
+    },
+    "preimage": "sonde-evidence-v1\nprev:0000000000000000000000000000000000000000000000000000000000000000\nprobe:00000000-0000-4000-8000-000000000000\nrunbook:rb\ncheck:c\nstatus:error\nran_at:2026-01-01T00:00:00Z\nsummary:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n",
+    "self_hash": "d7b6bca50a97821e782e9ebe3328416626678cfe28ea5c90b72982ac2a6bfb70"
+  },
+  {
+    "name": "summary with newlines and unicode",
+    "probe_id": "probe-eu-1",
+    "prev_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+    "result": {
+      "runbook_id": "db-failover",
+      "check_id": "status-page",
+      "status": "skipped",
+      "ran_at": "2026-12-31T23:59:59Z",
+      "summary": "disabled in the runbook\nline two — naïve ünicode 🙂"
+    },
+    "preimage": "sonde-evidence-v1\nprev:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789\nprobe:probe-eu-1\nrunbook:db-failover\ncheck:status-page\nstatus:skipped\nran_at:2026-12-31T23:59:59Z\nsummary:72907525616c7b99e16ca9dafba60929af8f7e14b96d0823e1a393160ff77704\n",
+    "self_hash": "c005eec48153b8d2d7e61317ba01f078d75fe624e2991bd8697da09322a2d887"
+  }
+]
