@@ -1,0 +1,38 @@
+# The linter set named in docs/design.md §11. A commit that fails this file does not
+# land, so keep the set small enough that it stays true.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - revive
+    - gosec
+    - ineffassign
+    - unused
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: error-strings
+        - name: error-return
+        - name: context-as-argument
+        - name: indent-error-flow
+        - name: unreachable-code
+  exclusions:
+    rules:
+      # Tests read fixtures from paths the test itself builds, and assert on
+      # error strings. Neither is the risk gosec and errcheck are looking for.
+      - path: _test\.go$
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt

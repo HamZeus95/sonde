@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # The Kubernetes version envtest runs. Bump deliberately: it is the version
+  # the check runners are proven against.
+  ENVTEST_K8S_VERSION: '1.37.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          check-latest: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # envtest runs a real API server from downloaded control-plane binaries.
+      # The Kubernetes checks are tested against it and never against a live
+      # cluster; without the binaries those tests skip, so CI installs them.
+      - name: Install envtest control plane
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          echo "KUBEBUILDER_ASSETS=$(setup-envtest use ${{ env.ENVTEST_K8S_VERSION }} -p path)" >> "$GITHUB_ENV"
+
+      - name: test
+        run: go test -race -count=1 ./...
+
+      - name: build
+        run: go build ./...
+
+      # The examples are the documentation. If they stop parsing, the docs are
+      # wrong, and the exit code says so.
+      - name: parse the examples
+        run: go run ./cmd/sonde parse ./examples/runbooks
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          check-latest: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.13.2

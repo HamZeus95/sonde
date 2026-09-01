@@ -1,0 +1,20 @@
+# Build output
+/sonde
+/dist/
+/bin/
+
+# Go
+*.test
+*.out
+/coverage.*
+
+# Local environment
+.env
+*.local.yaml
+/kubeconfig
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
