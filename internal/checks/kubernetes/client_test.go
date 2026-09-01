@@ -11,6 +11,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -43,6 +45,23 @@ func startCluster(t *testing.T) *rest.Config {
 		}
 	})
 	return cfg
+}
+
+// TestRateLimitsAreNotClientGoDefaults pins the budget. client-go's default of
+// 5 QPS is a controller's, and at that rate a runbook set of any size spends
+// its run queued behind its own client while reporting the timeouts as though
+// the cluster were slow.
+func TestRateLimitsAreNotClientGoDefaults(t *testing.T) {
+	applied := applyRateLimits(&rest.Config{})
+	if applied.QPS <= 5 || applied.Burst <= 10 {
+		t.Fatalf("QPS %v burst %d: still client-go's controller budget", applied.QPS, applied.Burst)
+	}
+
+	// An operator who set their own budget keeps it.
+	custom := applyRateLimits(&rest.Config{QPS: 7, Burst: 9})
+	if custom.QPS != 7 || custom.Burst != 9 {
+		t.Errorf("an explicit setting was overwritten: QPS %v burst %d", custom.QPS, custom.Burst)
+	}
 }
 
 func TestClientAgainstRealAPI(t *testing.T) {
@@ -277,6 +296,65 @@ func TestClientAgainstRealAPI(t *testing.T) {
 		if outcome.Status != model.StatusFail {
 			t.Errorf("status = %q, want fail (%s)", outcome.Status, outcome.Observed.Summary)
 		}
+	})
+
+	// A probe runs for weeks and discovery is cached, so a type installed after
+	// the client was built has to become visible without a restart.
+	t.Run("a type installed after the client was built resolves", func(t *testing.T) {
+		const kind = "SondeProbeFixture"
+		crd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "sondeprobefixtures.sonde.test"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: "sonde.test",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural: "sondeprobefixtures", Singular: "sondeprobefixture", Kind: kind,
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{
+					Name: "v1", Served: true, Storage: true,
+					Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object"},
+					},
+				}},
+			},
+		}
+		apiextensions, err := apiextensionsclient.NewForConfig(cfg)
+		if err != nil {
+			t.Fatalf("apiextensions client: %v", err)
+		}
+		if _, err := apiextensions.ApiextensionsV1().CustomResourceDefinitions().
+			Create(ctx, crd, metav1.CreateOptions{}); err != nil {
+			t.Fatalf("create crd: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = apiextensions.ApiextensionsV1().CustomResourceDefinitions().
+				Delete(context.Background(), crd.Name, metav1.DeleteOptions{})
+		})
+
+		// The API server needs a moment to serve the new type in discovery.
+		resolver, ok := reg.Runner(model.KindKubernetes, "resource_exists")
+		if !ok {
+			t.Fatal("kubernetes/resource_exists is not registered")
+		}
+		var lastErr error
+		for range 30 {
+			outcome, err := resolver.Run(ctx, meta, model.Check{
+				ID: "c", Kind: model.KindKubernetes, Check: "resource_exists", Enabled: true,
+				Spec: &model.ResourceExistsSpec{KubernetesTarget: model.KubernetesTarget{
+					Resource: "sondeprobefixture/absent", Namespace: namespace}},
+			})
+			lastErr = err
+			if err == nil {
+				// The object does not exist, which is a fail — and a fail means
+				// the type resolved, which is what is under test.
+				if outcome.Status != model.StatusFail {
+					t.Errorf("status = %q", outcome.Status)
+				}
+				return
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		t.Fatalf("the new type never resolved: %v", lastErr)
 	})
 
 	t.Run("an unknown resource type is an error", func(t *testing.T) {

@@ -30,6 +30,35 @@ import (
 	"github.com/HamZeus95/sonde/internal/canonical"
 )
 
+// Rate limits for the client this package builds.
+//
+// client-go defaults to 5 requests a second with a burst of 10, which is a
+// controller's budget and not a checker's: a runbook set with two hundred
+// kubernetes checks spends most of a run queued behind its own client, and the
+// checks that lose the race report `error` — "Sonde could not determine the
+// answer" — which reads as a slow cluster rather than as a misconfigured
+// client. That is the most misleading way this could fail.
+//
+// Generous enough that the limiter is never the reason a check is slow, and
+// modest enough to stay polite: a probe issues a few requests per check, and
+// the engine runs eight at a time by default.
+const (
+	defaultQPS   = 50
+	defaultBurst = 100
+)
+
+// applyRateLimits gives a config a checker's budget, leaving an operator's own
+// setting alone.
+func applyRateLimits(config *rest.Config) *rest.Config {
+	if config.QPS == 0 {
+		config.QPS = defaultQPS
+	}
+	if config.Burst == 0 {
+		config.Burst = defaultBurst
+	}
+	return config
+}
+
 // Target addresses one object.
 type Target struct {
 	Cluster   string
@@ -92,7 +121,7 @@ type ClientSet struct {
 type cluster struct {
 	dynamic dynamic.Interface
 	typed   clientset.Interface
-	mapper  meta.RESTMapper
+	mapper  *restmapper.DeferredDiscoveryRESTMapper
 }
 
 type rawConfig struct {
@@ -241,6 +270,7 @@ func (f *fixedCluster) Access(ctx context.Context, req AccessRequest) (AccessRes
 }
 
 func newCluster(config *rest.Config) (*cluster, error) {
+	config = applyRateLimits(config)
 	dyn, err := dynamic.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("dynamic client: %w", err)
@@ -306,7 +336,16 @@ func (c *cluster) mappingFor(resource string) (*meta.RESTMapping, error) {
 	}
 	gvr, err := c.mapper.ResourceFor(schema.GroupVersionResource{Group: group, Resource: normalised})
 	if err != nil {
-		return nil, fmt.Errorf("resolve resource type %q: %w", resource, err)
+		// Discovery is cached, and a probe runs for weeks. A type installed
+		// after this client was built — a new operator's CRD, most often —
+		// would otherwise be unresolvable until someone restarted the pod, and
+		// the check would report `error` forever with a message about a kind
+		// that plainly exists. One reset, one retry.
+		c.mapper.Reset()
+		gvr, err = c.mapper.ResourceFor(schema.GroupVersionResource{Group: group, Resource: normalised})
+		if err != nil {
+			return nil, fmt.Errorf("resolve resource type %q: %w", resource, err)
+		}
 	}
 	gvk, err := c.mapper.KindFor(gvr)
 	if err != nil {
