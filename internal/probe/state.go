@@ -158,15 +158,6 @@ func (s *Store) writeAtomic(name string, data []byte, mode os.FileMode) error {
 	return nil
 }
 
-// GenerateKey creates a new Ed25519 keypair for a probe.
-func GenerateKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, nil, fmt.Errorf("generate key: %w", err)
-	}
-	return pub, priv, nil
-}
-
 // CertificateRequest builds a PEM CSR for the probe's key.
 //
 // The control plane decides what the certificate says; the probe only proves it

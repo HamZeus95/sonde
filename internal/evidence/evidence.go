@@ -1,14 +1,21 @@
-// Package probe is the daemon half of Sonde: it leases work from a control
-// plane, executes checks read-only inside the customer's network, and returns
-// signed results.
+// Package evidence is the signed, hash-chained record of what Sonde checked.
 //
-// The probe only ever dials out. It listens on no port, and no credential it
-// holds — kubeconfig, cloud key, IdP secret — is ever sent anywhere. What
-// leaves is a result: a status, a short summary, and a signature.
-package probe
+// It is deliberately small and dependency-free beyond the model types, because
+// two very different things need it: the probe, which produces the chain inside
+// a customer's network, and the verifier, which an auditor runs against an
+// exported bundle on a laptop with no access to anything.
+//
+// What the chain proves is narrow and worth stating plainly: that every result
+// in it was signed by the key a probe held, and that none was altered or
+// removed. It does not prove that the probe was pointed at the right cluster,
+// or that a control plane did not omit an entire probe. The first is the
+// customer's own configuration; the second is why a bundle lists every probe it
+// knows about and why a probe keeps its own tail.
+package evidence
 
 import (
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -23,6 +30,19 @@ import (
 // format changes this string, so an old and a new chain can never be confused
 // for one another.
 const EvidenceVersion = "sonde-evidence-v1"
+
+// GenerateKey creates a signing keypair.
+//
+// The private half is generated where it will be used and never travels: a
+// control plane that held it could produce results indistinguishable from a
+// probe's, and then none of this would prove anything.
+func GenerateKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate key: %w", err)
+	}
+	return pub, priv, nil
+}
 
 // Entry is one link in a probe's hash chain: a result, the hash of the result
 // before it, and a signature over the two.
@@ -101,13 +121,14 @@ func Sign(key ed25519.PrivateKey, probeID string, prevHash string, r model.Resul
 	}, nil
 }
 
-// Verify checks one entry against the result it claims to cover.
+// verify checks one entry against the result it claims to cover. VerifyEntry in
+// bundle.go is the exported name; this stays unexported so there is one.
 //
 // It is here, in the probe's own package, because the probe must be able to
 // verify its own chain after a restart before appending to it. The control
 // plane runs the same check in TypeScript against the vectors in
 // docs/evidence.md.
-func Verify(pub ed25519.PublicKey, probeID string, r model.Result, entry Entry) error {
+func verify(pub ed25519.PublicKey, probeID string, r model.Result, entry Entry) error {
 	if len(pub) != ed25519.PublicKeySize {
 		return fmt.Errorf("public key is %d bytes, want %d", len(pub), ed25519.PublicKeySize)
 	}
@@ -155,7 +176,7 @@ func VerifyChain(pub ed25519.PublicKey, probeID string, prevHash string, results
 		if entry.PrevHash != prevHash {
 			return fmt.Errorf("chain broken at %d: entry follows %q, expected %q", i, entry.PrevHash, prevHash)
 		}
-		if err := Verify(pub, probeID, results[i], entry); err != nil {
+		if err := verify(pub, probeID, results[i], entry); err != nil {
 			return fmt.Errorf("entry %d: %w", i, err)
 		}
 		prevHash = entry.SelfHash

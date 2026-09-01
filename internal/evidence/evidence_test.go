@@ -1,4 +1,4 @@
-package probe
+package evidence
 
 import (
 	"crypto/ed25519"
@@ -167,7 +167,7 @@ func TestAlteredResultFailsVerification(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			altered := results[0]
 			tt.alter(&altered)
-			if err := Verify(pub, probeID, altered, entries[0]); err == nil {
+			if err := VerifyEntry(pub, probeID, altered, entries[0]); err == nil {
 				t.Error("an altered result must not verify")
 			}
 		})

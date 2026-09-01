@@ -3,8 +3,13 @@ package probe
 import (
 	"time"
 
+	"github.com/HamZeus95/sonde/internal/evidence"
 	"github.com/HamZeus95/sonde/internal/model"
 )
+
+// Entry is one link in a probe's hash chain. Aliased rather than redeclared so
+// that the wire types and the verifier cannot drift apart.
+type Entry = evidence.Entry
 
 // The wire types between a probe and a control plane.
 //

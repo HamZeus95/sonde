@@ -13,6 +13,7 @@ import (
 
 	"github.com/HamZeus95/sonde/internal/checks"
 	httpchecks "github.com/HamZeus95/sonde/internal/checks/http"
+	"github.com/HamZeus95/sonde/internal/evidence"
 	"github.com/HamZeus95/sonde/internal/model"
 )
 
@@ -118,7 +119,7 @@ func TestEnrolAndReport(t *testing.T) {
 	if stored.entries[1].PrevHash != stored.entries[0].SelfHash {
 		t.Error("the second entry does not follow the first")
 	}
-	if err := VerifyChain(stored.publicKey, stored.id, "", stored.results, stored.entries); err != nil {
+	if err := evidence.VerifyChain(stored.publicKey, stored.id, "", stored.results, stored.entries); err != nil {
 		t.Fatalf("stored chain does not verify: %v", err)
 	}
 }
@@ -165,7 +166,7 @@ func TestChainContinuesAcrossRestarts(t *testing.T) {
 	if stored.entries[1].PrevHash != stored.entries[0].SelfHash {
 		t.Error("the restarted probe started a new chain instead of continuing its own")
 	}
-	if err := VerifyChain(stored.publicKey, stored.id, "", stored.results, stored.entries); err != nil {
+	if err := evidence.VerifyChain(stored.publicKey, stored.id, "", stored.results, stored.entries); err != nil {
 		t.Fatalf("chain across the restart does not verify: %v", err)
 	}
 }

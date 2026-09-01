@@ -1,3 +1,11 @@
+// Package probe is the daemon half of Sonde: it leases work from a control
+// plane, executes checks read-only inside the customer's network, and returns
+// signed results.
+//
+// The probe only ever dials out. It listens on no port, and no credential it
+// holds — kubeconfig, cloud key, IdP secret — is ever sent anywhere. What
+// leaves is a result: a status, a short summary, and a signature made with a
+// key generated in the pod and never transmitted.
 package probe
 
 import (
@@ -12,6 +20,7 @@ import (
 	"time"
 
 	"github.com/HamZeus95/sonde/internal/checks"
+	"github.com/HamZeus95/sonde/internal/evidence"
 	"github.com/HamZeus95/sonde/internal/model"
 )
 
@@ -141,7 +150,7 @@ func New(ctx context.Context, opts Options) (*Probe, error) {
 func (p *Probe) ProbeID() string { return p.state.ProbeID }
 
 func (p *Probe) enrol(ctx context.Context) error {
-	pub, priv, err := GenerateKey()
+	pub, priv, err := evidence.GenerateKey()
 	if err != nil {
 		return err
 	}
@@ -299,7 +308,7 @@ func (p *Probe) cycle(ctx context.Context) (worked bool, err error) {
 	for i, r := range results {
 		plain[i] = r.Result
 	}
-	entries, tail, err := Chain(p.key, p.state.ProbeID, p.state.LastHash, plain)
+	entries, tail, err := evidence.Chain(p.key, p.state.ProbeID, p.state.LastHash, plain)
 	if err != nil {
 		return true, err
 	}

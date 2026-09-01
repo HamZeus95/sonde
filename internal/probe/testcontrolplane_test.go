@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HamZeus95/sonde/internal/evidence"
 	"github.com/HamZeus95/sonde/internal/model"
 )
 
@@ -331,7 +332,7 @@ func (cp *testControlPlane) handleResults(w http.ResponseWriter, r *http.Request
 	for i, signed := range req.Results {
 		results[i], entries[i] = signed.Result, signed.Entry
 	}
-	if err := VerifyChain(p.publicKey, p.id, p.chainTail, results, entries); err != nil {
+	if err := evidence.VerifyChain(p.publicKey, p.id, p.chainTail, results, entries); err != nil {
 		writeError(w, http.StatusBadRequest, "chain does not verify: "+err.Error())
 		return
 	}
