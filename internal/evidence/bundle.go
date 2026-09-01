@@ -266,7 +266,7 @@ func Verify(bundle *Bundle) (Report, error) {
 		return report, fmt.Errorf("this is not a bundle: no %s", RunsFile)
 	}
 
-	counts := map[model.Status]int{}
+	read := 0
 	for index, line := range strings.Split(strings.TrimRight(string(runs), "\n"), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -276,7 +276,7 @@ func Verify(bundle *Bundle) (Report, error) {
 			report.Problems = append(report.Problems, fmt.Sprintf("%s line %d: %s", RunsFile, index+1, err))
 			continue
 		}
-		counts[run.Result.Status]++
+		read++
 
 		key, known := keys[run.ProbeID]
 		if !known {
@@ -308,31 +308,14 @@ func Verify(bundle *Bundle) (Report, error) {
 	for probe, tail := range tails {
 		report.Chains[probe] = tail
 	}
-	if manifest.Counts.Runs != report.Verified+countProblemRuns(report) {
-		// Reported, not fatal: a mismatch means the manifest and the runs
-		// disagree, which is worth an auditor's attention either way.
+	// A manifest that disagrees with the file it describes is worth reporting
+	// even when everything else holds: it means the two were produced from
+	// different data.
+	if manifest.Counts.Runs != read {
 		report.Problems = append(report.Problems,
-			fmt.Sprintf("the manifest claims %d runs and %s holds %d", manifest.Counts.Runs, RunsFile, totalRuns(counts)))
+			fmt.Sprintf("the manifest claims %d runs and %s holds %d", manifest.Counts.Runs, RunsFile, read))
 	}
 	return report, nil
-}
-
-func countProblemRuns(report Report) int {
-	problems := 0
-	for _, problem := range report.Problems {
-		if strings.HasPrefix(problem, RunsFile+" line ") {
-			problems++
-		}
-	}
-	return problems
-}
-
-func totalRuns(counts map[model.Status]int) int {
-	total := 0
-	for _, n := range counts {
-		total += n
-	}
-	return total
 }
 
 // VerifyEntry is Verify's per-result check, exported for callers that hold the
