@@ -1,0 +1,6 @@
+# The Secret moved to another file. Moving an object is not deleting it.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-creds
+  namespace: payments

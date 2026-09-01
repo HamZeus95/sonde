@@ -1,0 +1,106 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "kubernetes_deployment.payments",
+      "type": "kubernetes_deployment",
+      "name": "payments",
+      "provider_name": "registry.opentofu.org/hashicorp/kubernetes",
+      "change": {
+        "actions": ["delete"],
+        "before": { "metadata": [{ "name": "payments-api", "namespace": "payments" }] },
+        "after": null
+      }
+    },
+    {
+      "address": "kubernetes_stateful_set_v1.postgres",
+      "type": "kubernetes_stateful_set_v1",
+      "name": "postgres",
+      "provider_name": "registry.opentofu.org/hashicorp/kubernetes",
+      "change": {
+        "actions": ["delete"],
+        "before": { "metadata": [{ "name": "postgres-primary", "namespace": "data" }] },
+        "after": null
+      }
+    },
+    {
+      "address": "kubernetes_manifest.kafka_topic",
+      "type": "kubernetes_manifest",
+      "name": "kafka_topic",
+      "provider_name": "registry.opentofu.org/hashicorp/kubernetes",
+      "change": {
+        "actions": ["delete"],
+        "before": {
+          "manifest": {
+            "apiVersion": "kafka.strimzi.io/v1beta2",
+            "kind": "KafkaTopic",
+            "metadata": { "name": "orders", "namespace": "data" }
+          }
+        },
+        "after": null
+      }
+    },
+    {
+      "address": "kubernetes_config_map.replaced",
+      "type": "kubernetes_config_map",
+      "name": "replaced",
+      "provider_name": "registry.opentofu.org/hashicorp/kubernetes",
+      "change": {
+        "actions": ["delete", "create"],
+        "before": { "metadata": [{ "name": "app-config", "namespace": "payments" }] },
+        "after": { "metadata": [{ "name": "app-config", "namespace": "payments" }] }
+      }
+    },
+    {
+      "address": "kubernetes_service.untouched",
+      "type": "kubernetes_service",
+      "name": "untouched",
+      "provider_name": "registry.opentofu.org/hashicorp/kubernetes",
+      "change": {
+        "actions": ["update"],
+        "before": { "metadata": [{ "name": "payments-api", "namespace": "payments" }] },
+        "after": { "metadata": [{ "name": "payments-api", "namespace": "payments" }] }
+      }
+    },
+    {
+      "address": "aws_route53_record.db_primary",
+      "type": "aws_route53_record",
+      "name": "db_primary",
+      "provider_name": "registry.opentofu.org/hashicorp/aws",
+      "change": {
+        "actions": ["delete"],
+        "before": { "name": "db-primary.internal.", "type": "CNAME" },
+        "after": null
+      }
+    },
+    {
+      "address": "aws_db_instance.payments",
+      "type": "aws_db_instance",
+      "name": "payments",
+      "provider_name": "registry.opentofu.org/hashicorp/aws",
+      "change": {
+        "actions": ["delete"],
+        "before": { "arn": "arn:aws:rds:eu-central-1:123456789012:db:payments-primary" },
+        "after": null
+      }
+    },
+    {
+      "address": "aws_s3_bucket.evidence",
+      "type": "aws_s3_bucket",
+      "name": "evidence",
+      "provider_name": "registry.opentofu.org/hashicorp/aws",
+      "change": {
+        "actions": ["delete"],
+        "before": { "arn": "arn:aws:s3:::sonde-evidence" },
+        "after": null
+      }
+    },
+    {
+      "address": "random_password.db",
+      "type": "random_password",
+      "name": "db",
+      "provider_name": "registry.opentofu.org/hashicorp/random",
+      "change": { "actions": ["delete"], "before": {}, "after": null }
+    }
+  ]
+}

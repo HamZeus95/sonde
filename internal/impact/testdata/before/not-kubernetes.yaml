@@ -1,0 +1,8 @@
+# A CI workflow, which is YAML and is not a Kubernetes object.
+name: ci
+on:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
