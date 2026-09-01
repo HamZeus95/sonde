@@ -1,0 +1,104 @@
+name: Sonde
+description: Test operational runbooks against live infrastructure, read-only.
+author: Sonde
+
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  paths:
+    description: Files or directories to check. Markdown files without a sonde frontmatter key are skipped.
+    required: false
+    default: "."
+  format:
+    description: Output format — human, json, junit or tap.
+    required: false
+    default: human
+  output:
+    description: Write the report to this file instead of stdout. Pair with format:junit to publish a test report.
+    required: false
+    default: ""
+  version:
+    description: Sonde release to run, or "latest".
+    required: false
+    default: latest
+  kubeconfig:
+    description: Path to a kubeconfig. Leave empty for runbooks with no kubernetes checks.
+    required: false
+    default: ""
+  context:
+    description: Run every kubernetes check against this kubeconfig context, whatever cluster its runbook names.
+    required: false
+    default: ""
+  fail-on-error:
+    description: >-
+      Fail the job when a check could not be evaluated at all (exit 4). A failing
+      assertion (exit 1) always fails the job: that means a runbook is wrong.
+      Set this to false when an unreachable cluster should not break a docs
+      pipeline.
+    required: false
+    default: "true"
+  github-token:
+    description: Token used to download the release binary.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  exit-code:
+    description: The exit code sonde returned — 0 passed, 1 a runbook is wrong, 3 a parse error, 4 something could not be checked.
+    value: ${{ steps.check.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install sonde
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        os=$(uname -s | tr '[:upper:]' '[:lower:]')
+        case "$(uname -m)" in
+          x86_64) arch=amd64 ;;
+          aarch64|arm64) arch=arm64 ;;
+          *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;;
+        esac
+        mkdir -p "$RUNNER_TEMP/sonde"
+        args=(--repo "${{ github.action_repository || 'HamZeus95/sonde' }}" --dir "$RUNNER_TEMP/sonde" --pattern "sonde_*_${os}_${arch}.tar.gz")
+        if [ "$VERSION" != "latest" ]; then
+          args=("$VERSION" "${args[@]}")
+        fi
+        gh release download "${args[@]}"
+        tar -C "$RUNNER_TEMP/sonde" -xzf "$RUNNER_TEMP/sonde"/sonde_*.tar.gz
+        echo "$RUNNER_TEMP/sonde" >> "$GITHUB_PATH"
+
+    - name: Check runbooks
+      id: check
+      shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        FORMAT: ${{ inputs.format }}
+        OUTPUT: ${{ inputs.output }}
+        KUBECONFIG_PATH: ${{ inputs.kubeconfig }}
+        CONTEXT: ${{ inputs.context }}
+        FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+      run: |
+        set -uo pipefail
+        args=(check --format "$FORMAT")
+        [ -n "$OUTPUT" ] && args+=(--output "$OUTPUT")
+        [ -n "$KUBECONFIG_PATH" ] && args+=(--kubeconfig "$KUBECONFIG_PATH")
+        [ -n "$CONTEXT" ] && args+=(--context "$CONTEXT")
+        # shellcheck disable=SC2086
+        sonde "${args[@]}" $PATHS
+        code=$?
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        case "$code" in
+          0) exit 0 ;;
+          4) if [ "$FAIL_ON_ERROR" = "true" ]; then exit 4; else
+               echo "::warning::sonde could not evaluate some checks; no runbook was found to be wrong"
+               exit 0
+             fi ;;
+          *) exit "$code" ;;
+        esac
