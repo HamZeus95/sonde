@@ -92,7 +92,59 @@ one.
 The control plane stores only the public key, and uses it to verify. It cannot
 produce a signature that verifies against it.
 
-## 4. Test vectors
+## 4. Evidence bundles
+
+An **evidence bundle** is a period of check history, exported for someone
+outside the vendor to check. It is a directory, or a `.tar.gz` of one:
+
+```
+manifest.json     what this covers, and the public keys needed to verify it
+runs.jsonl        one result and chain entry per line, in chain order
+runbooks.json     what was being asserted, at export time
+controls.json     which control each piece of evidence speaks to
+```
+
+Format version: **sonde-bundle-v1**. A verifier that does not recognise the
+version refuses rather than guessing — half-understood evidence is worse than
+none.
+
+`manifest.json` carries a SHA-256 of every other file, so a bundle edited after
+export does not verify. It also lists every probe whose signatures appear, with
+the public half of each key, and a `chain_start` per probe — the hash the first
+included run follows. That last field is what lets one quarter out of three
+years still be a chain rather than an unexplained gap.
+
+### Verifying one
+
+```bash
+sonde verify ./sonde-evidence-2026-Q3.tar.gz
+```
+
+Exporting a bundle is a control plane feature. **Verifying one is free and open
+source**, because evidence that only the vendor can check is not evidence. The
+command needs no network, no control plane and no account, and the party being
+audited cannot influence its result.
+
+Exit 0 means every signature held and no result is missing from any chain.
+Exit 1 means it did not, and each problem is named.
+
+### What a bundle proves, and what it does not
+
+It proves that every result in it was signed by a key one of the customer's
+probes held, and that none was altered or removed after signing.
+
+It does not prove that a probe was pointed at the right cluster — that is the
+customer's own configuration — and it cannot, on its own, prove that a control
+plane never omitted an entire probe. Two things address the second: the manifest
+lists every probe it knows of, and each probe keeps its own chain tail locally,
+so an operator can compare the tail in `sonde verify --format json` against the
+`last_hash` in the probe's state directory. A control plane that dropped a probe
+from an export is visible the moment anyone checks.
+
+Saying this plainly is deliberate. An auditor who discovers a limit you did not
+disclose stops trusting everything else you said.
+
+## 5. Test vectors
 
 [`evidence-vectors.json`](evidence-vectors.json) holds the preimages and hashes
 for a set of results, including empty summaries and summaries with newlines and

@@ -74,6 +74,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newProbeCommand())
 	root.AddCommand(newImpactCommand())
 	root.AddCommand(newSuggestCommand())
+	root.AddCommand(newVerifyCommand())
 	return root
 }
 

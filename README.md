@@ -71,6 +71,7 @@ Early, but working end to end.
 | `sonde probe` | Daemon: one-time-token enrolment, mTLS, signed hash-chained results. |
 | `sonde impact` | What a manifest diff or an OpenTofu plan removes, as canonical URIs. |
 | `sonde suggest` | Drafts assertions from prose for a human to review. |
+| `sonde verify` | Checks a signed evidence bundle offline, with no account. |
 
 The hosted control plane — scheduling, history, the dashboard, the reverse-index
 pull request bot, wiki connectors — is a separate, proprietary repository. What
@@ -194,6 +195,33 @@ with Ed25519 and chained to the result before them, so neither the control plane
 nor anyone who reaches its database can rewrite a `fail` into a `pass` or drop a
 failing check without it being detectable — see
 [docs/evidence.md](docs/evidence.md).
+
+## Evidence an auditor can check
+
+Results carry an Ed25519 signature and are chained to the result before them, so
+neither the control plane nor anyone who reaches its database can rewrite a
+`fail` into a `pass` or drop a failing check without it being detectable.
+
+A period of that history exports as a bundle, and **verifying one is free**:
+
+```bash
+sonde verify ./sonde-evidence-2026-Q3.tar.gz
+```
+
+```
+sonde-bundle-v1
+  period      2026-07-01 to 2026-10-01
+  runbooks    14, 62 checks
+  results     5940 passed, 118 failed, 22 could not be checked, 0 skipped
+  probe       eu-1 (prod-eu-1)
+
+6080 results verified. Every signature holds and no result is missing from any chain.
+```
+
+No network, no account, nothing to trust but the bundle. Exporting one is a
+control plane feature; checking one is here, because evidence only the vendor
+can verify is not evidence. [docs/evidence.md](docs/evidence.md) has the format
+and, just as importantly, what a bundle does *not* prove.
 
 ## Read-only, always
 
