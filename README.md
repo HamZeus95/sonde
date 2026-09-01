@@ -81,6 +81,9 @@ the infrastructure you are checking.
 The format is stable at version 1 — see
 [docs/runbook-contract.md](docs/runbook-contract.md).
 
+Running the whole system — control plane, probe, dashboard — is walked through
+in `docs/getting-started.md` in the `sonde-cloud` repository.
+
 ## Try it
 
 ```bash
