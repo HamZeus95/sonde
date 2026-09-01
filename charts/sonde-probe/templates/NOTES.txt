@@ -1,0 +1,32 @@
+The probe is starting in namespace {{ .Release.Namespace }}.
+
+It listens on no port and makes only outbound connections to
+{{ .Values.controlPlane.url }}. There is no Service and nothing to expose.
+
+  kubectl -n {{ .Release.Namespace }} logs -f statefulset/{{ include "sonde-probe.fullname" . }}
+
+On first start it exchanges the enrolment token for a client certificate and
+generates its signing key inside the pod. The key is written to
+/var/lib/sonde and never leaves it.
+
+{{- if .Values.enrolment.token }}
+
+The enrolment token was passed through Helm values, so it is in this release's
+history. It is single use and expires in fifteen minutes, so once the log line
+"enrolled" appears it is worthless — but delete it anyway:
+
+  helm upgrade {{ .Release.Name }} ... --set enrolment.token=""
+{{- end }}
+{{- if not .Values.persistence.enabled }}
+
+WARNING: persistence is disabled, so the probe's identity lives in an emptyDir.
+It will be lost on restart, and an enrolment token is single use — every restart
+will need a new one issued by hand. Enable persistence unless you are testing.
+{{- end }}
+{{- if not .Values.rbac.subjectAccessReview }}
+
+can_i checks that name another identity (as_user or as_group) will report
+`error` rather than a result: answering them needs create on
+subjectaccessreviews, which this release did not grant. Set
+rbac.subjectAccessReview=true if you want those checks answered.
+{{- end }}

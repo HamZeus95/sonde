@@ -5,9 +5,9 @@ of each part would get an attacker. It is written to be read before the README
 by whoever has to approve Sonde running against production.
 
 **Status:** the CLI in §2 and the probe in §3 are implemented, including all
-nine v1 checks, enrolment, mTLS and signed results. The Helm chart that runs the
-probe in a cluster is not written yet, so §3's image and RBAC describe how it
-will be packaged rather than something you can install today.
+nine v1 checks, enrolment, mTLS and signed results. The Helm chart in
+`charts/sonde-probe` installs the probe with exactly the grant below, and the
+image is distroless, non-root and read-only.
 
 ---
 

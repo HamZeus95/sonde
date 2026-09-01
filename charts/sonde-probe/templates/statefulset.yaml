@@ -1,0 +1,114 @@
+{{- if not .Values.controlPlane.url }}
+{{- fail "controlPlane.url is required: the probe has nowhere to report to" }}
+{{- end }}
+{{- if not .Values.probe.environment }}
+{{- fail "probe.environment is required: it is the cluster name a runbook's checks resolve against, and a probe with the wrong one silently runs nothing" }}
+{{- end }}
+{{- if and (not .Values.enrolment.token) (not .Values.enrolment.existingSecret) }}
+{{- fail "an enrolment token is required on first install: set enrolment.existingSecret, or enrolment.token" }}
+{{- end }}
+apiVersion: apps/v1
+# A StatefulSet, because the probe has an identity. Its signing key, its
+# certificate and its place in the evidence chain live on disk, and an
+# enrolment token is single use — a probe that loses that directory cannot
+# re-enrol itself and needs a human with a new token.
+kind: StatefulSet
+metadata:
+  name: {{ include "sonde-probe.fullname" . }}
+  labels: {{- include "sonde-probe.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # One probe, one identity, one chain. Scaling this is not a way to go faster;
+  # it is a way to have two probes fighting over the same state.
+  serviceName: {{ include "sonde-probe.fullname" . }}
+  selector:
+    matchLabels: {{- include "sonde-probe.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "sonde-probe.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "sonde-probe.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: probe
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - probe
+            - --control-plane={{ .Values.controlPlane.url }}
+            - --state-dir=/var/lib/sonde
+            - --name={{ .Values.probe.name | default .Release.Name }}
+            - --environment={{ .Values.probe.environment }}
+            - --poll-wait={{ .Values.probe.pollWait }}
+            - --concurrency={{ .Values.probe.concurrency }}
+            - --log-format={{ .Values.probe.logFormat }}
+            {{- if or .Values.controlPlane.caCert .Values.controlPlane.existingCaSecret }}
+            - --ca-file=/etc/sonde/ca/ca.crt
+            {{- end }}
+            {{- if .Values.probe.allowChainReset }}
+            - --allow-chain-reset
+            {{- end }}
+          env:
+            - name: SONDE_ENROLMENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sonde-probe.enrolmentSecretName" . }}
+                  key: {{ .Values.enrolment.secretKey }}
+                  # Optional, because after enrolment the token is spent and the
+                  # Secret should be deleted. A probe that already has an
+                  # identity never reads this.
+                  optional: true
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/sonde
+            {{- if or .Values.controlPlane.caCert .Values.controlPlane.existingCaSecret }}
+            - name: control-plane-ca
+              mountPath: /etc/sonde/ca
+              readOnly: true
+            {{- end }}
+          # No probes. The container listens on nothing, so there is no
+          # endpoint to check; a liveness probe here would need a port opened
+          # for its own benefit, which is the opposite of the point.
+      volumes:
+        {{- if or .Values.controlPlane.caCert .Values.controlPlane.existingCaSecret }}
+        - name: control-plane-ca
+          secret:
+            secretName: {{ .Values.controlPlane.existingCaSecret | default (printf "%s-ca" (include "sonde-probe.fullname" .)) }}
+        {{- end }}
+        {{- if not .Values.persistence.enabled }}
+        - name: state
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+      spec:
+        accessModes: {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- with .Values.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

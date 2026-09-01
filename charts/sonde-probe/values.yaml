@@ -1,0 +1,108 @@
+# The Sonde probe.
+#
+# It runs inside your cluster, executes checks read-only, and returns signed
+# results to a control plane. It listens on no port and makes only outbound
+# connections, so there is no Service, no Ingress and no NetworkPolicy ingress
+# rule to write.
+
+image:
+  repository: ghcr.io/hamzeus95/sonde
+  # Pinned by the chart's appVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+controlPlane:
+  # Base URL of the control plane. Required.
+  url: ""
+  # Certificate authority to trust for the control plane, when it does not use
+  # a publicly trusted certificate. Provide either inline PEM or an existing
+  # Secret with a ca.crt key.
+  caCert: ""
+  existingCaSecret: ""
+
+probe:
+  # Name recorded at enrolment. Defaults to the release name.
+  name: ""
+  # The environment this probe covers. This is also the cluster name a
+  # runbook's checks resolve against, so it must match the `environment` in the
+  # frontmatter of the runbooks this probe should run.
+  environment: ""
+  # How long each long poll may block.
+  pollWait: 30s
+  # How many leased checks run at once.
+  concurrency: 8
+  logFormat: json
+  # Adopt the control plane's chain position when it disagrees with this
+  # probe's. Leave false. Setting it says "the control plane was restored from
+  # a backup and I know it", and it is the only way evidence loses continuity
+  # without someone deciding to.
+  allowChainReset: false
+
+enrolment:
+  # A one-time token, valid for fifteen minutes and usable once.
+  #
+  # Prefer existingSecret. A token in `token` ends up in Helm's release history
+  # and in whatever holds your values file — and while a spent token is
+  # worthless, an unspent one enrols a probe into your tenant.
+  token: ""
+  existingSecret: ""
+  secretKey: token
+
+rbac:
+  create: true
+  # get and list on the API groups the checks read. Narrow `resources` if your
+  # runbooks only name a few types.
+  apiGroups: ["", "apps", "batch", "networking.k8s.io"]
+  resources: ["*"]
+  # can_i checks that name another identity (as_user or as_group) need create
+  # on subjectaccessreviews. It is a privileged grant — being able to ask
+  # "may this user do this?" about arbitrary users is an authorization oracle —
+  # so it is off unless you want those checks.
+  #
+  # Without it, such checks report `error`, never `fail`: Sonde says it could
+  # not determine the answer rather than accusing your runbook.
+  subjectAccessReview: false
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# The probe's key, certificate and chain position live here. They must survive
+# a restart: an enrolment token is single use, so a probe that loses this
+# directory has to be enrolled again by a human.
+persistence:
+  enabled: true
+  size: 64Mi
+  storageClass: ""
+  accessModes: ["ReadWriteOnce"]
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+# Hardened by default. Every field here is something a security reviewer will
+# ask about, so none of them is left to the cluster's default.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+extraEnv: []

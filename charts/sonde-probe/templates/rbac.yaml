@@ -1,0 +1,36 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "sonde-probe.fullname" . }}
+  labels: {{- include "sonde-probe.labels" . | nindent 4 }}
+rules:
+  # get and list only. No watch — nothing in Sonde streams — and no verb that
+  # changes anything. This is the complete grant; there is no second rule
+  # hidden in a subchart.
+  - apiGroups: {{ toYaml .Values.rbac.apiGroups | nindent 6 }}
+    resources: {{ toYaml .Values.rbac.resources | nindent 6 }}
+    verbs: ["get", "list"]
+  {{- if .Values.rbac.subjectAccessReview }}
+  # Required only for can_i checks that name another identity. create is how
+  # the Kubernetes API models a question: the request body is the question, the
+  # response is the answer, and nothing is persisted or changed.
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "sonde-probe.fullname" . }}
+  labels: {{- include "sonde-probe.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "sonde-probe.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "sonde-probe.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

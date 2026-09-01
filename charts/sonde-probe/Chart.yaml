@@ -1,0 +1,15 @@
+apiVersion: v2
+name: sonde-probe
+description: Runs the Sonde probe in a cluster, read-only and outbound-only.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/HamZeus95/sonde
+sources:
+  - https://github.com/HamZeus95/sonde
+keywords:
+  - runbooks
+  - documentation
+  - sre
+maintainers:
+  - name: Sonde

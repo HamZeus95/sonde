@@ -189,6 +189,21 @@ SONDE_ENROLMENT_TOKEN=... sonde probe \
   --environment prod-eu-1
 ```
 
+In a cluster, install the chart:
+
+```bash
+helm install sonde-probe ./charts/sonde-probe \
+  --namespace sonde --create-namespace \
+  --set controlPlane.url=https://sonde.example.com \
+  --set probe.environment=prod-eu-1 \
+  --set enrolment.existingSecret=sonde-enrolment
+```
+
+The grant is `get` and `list`, and nothing else — no `watch`, no verb that
+changes anything. `can_i` checks about other identities need one more grant, off
+by default, and report `error` rather than `fail` without it. See
+[charts/sonde-probe](charts/sonde-probe/README.md).
+
 It makes only outbound connections. It listens on no port, generates its signing
 key inside the pod, and never sends a credential anywhere. Results are signed
 with Ed25519 and chained to the result before them, so neither the control plane
