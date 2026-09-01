@@ -137,6 +137,14 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if out == nil {
 		return nil
 	}
+	if len(bytes.TrimSpace(payload)) == 0 {
+		// A 2xx with no body is almost always a proxy that does not recognise
+		// the hostname and answered on the control plane's behalf. Saying that
+		// is more use than "unexpected end of JSON input", which sends people
+		// looking for a bug in the probe.
+		return fmt.Errorf("%s: the control plane answered %s with an empty body — check that %s is a hostname it serves",
+			path, resp.Status, c.baseURL.Host)
+	}
 	if err := json.Unmarshal(payload, out); err != nil {
 		return fmt.Errorf("decode %s response: %w", path, err)
 	}

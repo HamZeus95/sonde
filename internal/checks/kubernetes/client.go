@@ -100,6 +100,14 @@ type rawConfig struct {
 	currentContext string
 }
 
+// inCluster reports whether there is no kubeconfig to choose a context from.
+//
+// A probe running as a pod has exactly one cluster available to it and no
+// kubeconfig at all. Insisting on a context match there would fail every
+// kubernetes check with "no kubeconfig context named prod-eu-1", which is the
+// deployment the chart exists for.
+func (r *rawConfig) inCluster() bool { return len(r.contexts) == 0 }
+
 // NewClientSet builds a client set from a kubeconfig. An empty kubeconfigPath
 // means the usual discovery: $KUBECONFIG, then ~/.kube/config.
 func NewClientSet(kubeconfigPath, contextOverride string) *ClientSet {
@@ -156,6 +164,13 @@ func (c *ClientSet) contextFor(clusterName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if raw.inCluster() {
+		// In a pod: one cluster, and the operator declared which environment
+		// this probe covers when they installed it. The scheduler only sends
+		// this probe work for that environment, so the cluster a check names
+		// is the cluster this pod is in.
+		return "", nil
+	}
 	if clusterName == "" {
 		if raw.currentContext == "" {
 			return "", fmt.Errorf("kubeconfig has no current context")
@@ -183,11 +198,16 @@ func (c *ClientSet) clusterFor(clusterName string) (*cluster, error) {
 		return existing, nil
 	}
 
+	// An empty context name means in-cluster; the deferred loader falls back to
+	// the ServiceAccount's own credentials when the kubeconfig names nothing.
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		c.loadingRules,
 		&clientcmd.ConfigOverrides{CurrentContext: contextName},
 	).ClientConfig()
 	if err != nil {
+		if contextName == "" {
+			return nil, fmt.Errorf("no kubeconfig and no service account: this probe cannot reach a cluster: %w", err)
+		}
 		return nil, fmt.Errorf("kubeconfig context %s: %w", contextName, err)
 	}
 	config.UserAgent = "sonde/1"

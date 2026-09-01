@@ -62,7 +62,7 @@ func newRootCommand() *cobra.Command {
 			"exists, that a dashboard link resolves, that the on-call group can scale a\n" +
 			"service. Sonde executes those claims read-only and reports which ones have\n" +
 			"stopped being true.",
-		Version: version(),
+		Version: buildVersion(),
 		// Errors are printed once, by main, with the right exit code.
 		SilenceErrors: true,
 		// Usage is printed for usage errors only, not for a runbook that failed.
@@ -78,9 +78,16 @@ func newRootCommand() *cobra.Command {
 	return root
 }
 
-// version reports the module version stamped in by the Go toolchain, so a
-// binary built from a tag says so without a build flag.
-func version() string {
+// version is stamped in at build time by the container image and the release
+// workflow; a `go build` with no ldflags falls back to what the toolchain
+// recorded.
+var version string
+
+// buildVersion reports what this binary is.
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info.Main.Version == "" {
 		return "dev"

@@ -94,7 +94,7 @@ func runProbe(cmd *cobra.Command, opts probeOptions) error {
 		PollWait:        opts.pollWait,
 		Concurrency:     opts.concurrency,
 		AllowChainReset: opts.allowChainReset,
-		Version:         version(),
+		Version:         buildVersion(),
 		Logger:          logger,
 	})
 	if err != nil {
