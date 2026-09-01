@@ -90,6 +90,19 @@ and a CA bundle, with no shell and no package manager.
 | `enrolment.existingSecret` | — | Preferred over `enrolment.token`. |
 | `rbac.subjectAccessReview` | `false` | Opt in for `can_i` about other identities. |
 | `persistence.enabled` | `true` | Disabling it loses the probe's identity on restart. |
+| `hostAliases` | `[]` | For a control plane whose name this cluster's DNS does not know. |
+
+### Reaching a control plane the cluster cannot resolve
+
+A probe in a local cluster often has to reach a control plane running on the
+host, by a name the cluster's own DNS knows nothing about. Map it rather than
+pointing the probe at a bare IP, so the certificate still verifies:
+
+```yaml
+hostAliases:
+  - ip: 172.20.0.1            # docker network inspect k3d-<cluster> --format '{{ "{{" }}range .IPAM.Config{{ "}}" }}{{ "{{" }}.Gateway{{ "}}" }}{{ "{{" }}end{{ "}}" }}'
+    hostnames: ["host.k3d.internal"]
+```
 
 ### `allowChainReset`
 

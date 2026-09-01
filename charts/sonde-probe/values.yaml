@@ -101,6 +101,19 @@ securityContext:
   capabilities:
     drop: ["ALL"]
 
+# Names this cluster's DNS does not know but the probe must reach.
+#
+# The usual case is a control plane addressed by a hostname that resolves
+# outside the cluster and not inside it — a local k3d cluster reaching a
+# development control plane on the host, most often. Mapping the name here
+# keeps the TLS certificate valid, which pointing the probe at a bare IP would
+# not.
+#
+#   hostAliases:
+#     - ip: 172.20.0.1
+#       hostnames: ["host.k3d.internal"]
+hostAliases: []
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
