@@ -2,6 +2,7 @@ package evidence
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -9,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -379,4 +381,125 @@ func mentions(problems []string, text string) bool {
 		}
 	}
 	return false
+}
+
+// TestRunsAreNotHeldInMemory is the regression test for the bug this file's
+// streaming exists to fix: Open used to read every file into a map, so
+// verifying three years of history needed three years of history in RAM.
+//
+// The assertion is structural rather than a memory measurement, because a
+// measurement is a threshold somebody eventually raises. runs.jsonl must not
+// be among the files the bundle is holding — whatever its size.
+func TestRunsAreNotHeldInMemory(t *testing.T) {
+	dir, _, _ := buildBundle(t)
+	archive := filepath.Join(t.TempDir(), "evidence.tar.gz")
+	writeArchive(t, dir, archive, "sonde-evidence-2026-Q3/")
+
+	for _, path := range []string{dir, archive} {
+		bundle, err := Open(path)
+		if err != nil {
+			t.Fatalf("open %s: %v", path, err)
+		}
+		if _, held := bundle.File(RunsFile); held {
+			t.Errorf("%s: %s is held in memory", path, RunsFile)
+		}
+		if !bundle.Has(RunsFile) {
+			t.Errorf("%s: %s is not in the bundle", path, RunsFile)
+		}
+		// The manifest still is: everything else needs it, and it does not
+		// grow with the period.
+		if _, held := bundle.File(ManifestFile); !held {
+			t.Errorf("%s: %s is not held", path, ManifestFile)
+		}
+
+		reader, err := bundle.OpenFile(RunsFile)
+		if err != nil {
+			t.Fatalf("%s: open %s: %v", path, RunsFile, err)
+		}
+		streamed, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatalf("%s: read %s: %v", path, RunsFile, err)
+		}
+		_ = reader.Close()
+		onDisk, err := os.ReadFile(filepath.Join(dir, RunsFile))
+		if err != nil {
+			t.Fatalf("read runs: %v", err)
+		}
+		if !bytes.Equal(streamed, onDisk) {
+			t.Errorf("%s: streamed %s differs from the file", path, RunsFile)
+		}
+	}
+}
+
+// TestALongHistoryVerifies exercises the scanner over more runs than fit in one
+// buffer, which is where a line-splitting mistake would show up: an off-by-one
+// in the line numbering, a dropped last line, or a chain that appears to have a
+// gap because a line was cut in half.
+func TestALongHistoryVerifies(t *testing.T) {
+	const count = 5000
+
+	dir := t.TempDir()
+	pub, priv, err := GenerateKey()
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	const probeID = "9a2c0f4e-7f3b-4a1d-9a08-3d4f6c2b1e57"
+
+	start := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	results := make([]model.Result, count)
+	for i := range results {
+		results[i] = model.Result{
+			RunbookID: "payments-scale-up",
+			CheckID:   "deploy-exists",
+			Status:    model.StatusPass,
+			RanAt:     start.Add(time.Duration(i) * time.Minute),
+			Observed:  model.Observed{Summary: "exists"},
+		}
+	}
+	entries, _, err := Chain(priv, probeID, "", results)
+	if err != nil {
+		t.Fatalf("chain: %v", err)
+	}
+
+	var lines bytes.Buffer
+	for i := range results {
+		encoded, err := json.Marshal(BundleRun{
+			ProbeID: probeID, Result: results[i], Entry: entries[i],
+			RunbookID: results[i].RunbookID, CheckID: results[i].CheckID,
+		})
+		if err != nil {
+			t.Fatalf("marshal run: %v", err)
+		}
+		lines.Write(encoded)
+		lines.WriteByte('\n')
+	}
+	write(t, dir, RunsFile, lines.Bytes())
+
+	manifest := Manifest{
+		Version:     BundleVersion,
+		Tenant:      "acme",
+		GeneratedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+		From:        start,
+		To:          start.Add(time.Duration(count) * time.Minute),
+		Probes: []BundleProbe{{
+			ID: probeID, Name: "eu-1", Environment: "prod-eu-1",
+			PublicKey: publicKeyPEM(t, pub),
+		}},
+		Files: map[string]string{RunsFile: digestOf(t, dir, RunsFile)},
+	}
+	manifest.Counts.Runs = count
+	manifest.Counts.Passed = count
+	encoded, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	write(t, dir, ManifestFile, encoded)
+
+	report := verifyDir(t, dir)
+	if !report.OK() {
+		t.Fatalf("problems: %v", report.Problems)
+	}
+	if report.Verified != count {
+		t.Errorf("verified = %d, want %d", report.Verified, count)
+	}
 }

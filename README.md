@@ -236,9 +236,10 @@ sonde-bundle-v1
 6080 results verified. Every signature holds and no result is missing from any chain.
 ```
 
-No network, no account, nothing to trust but the bundle. Exporting one is a
-control plane feature; checking one is here, because evidence only the vendor
-can verify is not evidence. [docs/evidence.md](docs/evidence.md) has the format
+No network, no account, nothing to trust but the bundle — and it is read as a
+stream, so a bundle covering three years verifies on the same laptop as one
+covering a week. Exporting one is a control plane feature; checking one is here,
+because evidence only the vendor can verify is not evidence. [docs/evidence.md](docs/evidence.md) has the format
 and, just as importantly, what a bundle does *not* prove.
 
 ## Read-only, always

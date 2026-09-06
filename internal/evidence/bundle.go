@@ -2,6 +2,8 @@ package evidence
 
 import (
 	"archive/tar"
+	"bufio"
+	"bytes"
 	"compress/gzip"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -15,6 +17,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -111,10 +114,31 @@ type Report struct {
 // OK reports whether the bundle verified completely.
 func (r Report) OK() bool { return len(r.Problems) == 0 }
 
-// Bundle is an opened bundle's raw files.
+// Bundle is an opened bundle.
+//
+// The small files — the manifest, the runbook index, the control mapping — are
+// held in memory, because everything that follows needs them. runs.jsonl is
+// not: it is the one file that grows with the period, and a three-year bundle
+// has to verify on an auditor's laptop rather than on a machine sized for it.
 type Bundle struct {
-	files map[string][]byte
+	small map[string][]byte
+	names []string
+	open  func(name string) (io.ReadCloser, error)
 }
+
+// maxSmallFile caps what is held in memory. The manifest of a very large
+// bundle is still a manifest; anything this size is not one.
+const maxSmallFile = 32 << 20
+
+// maxBundleFile caps what a single streamed entry may expand to. A bundle
+// arrives from whoever is being audited, so it is untrusted input like any
+// other.
+const maxBundleFile = 512 << 20
+
+// maxRunLine caps one line of runs.jsonl. A result is a status and a short
+// summary; a line this long is not one, and reading it would undo the point of
+// streaming the file.
+const maxRunLine = 8 << 20
 
 // Open reads a bundle from a directory or a .tar.gz.
 func Open(path string) (*Bundle, error) {
@@ -129,7 +153,8 @@ func Open(path string) (*Bundle, error) {
 }
 
 func openDirectory(root string) (*Bundle, error) {
-	files := map[string][]byte{}
+	paths := map[string]string{}
+	bundle := &Bundle{small: map[string][]byte{}}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -138,37 +163,139 @@ func openDirectory(root string) (*Bundle, error) {
 		if relErr != nil {
 			return relErr
 		}
+		name := filepath.ToSlash(relative)
+		paths[name] = path
+		bundle.names = append(bundle.names, name)
+		if name == RunsFile {
+			return nil
+		}
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		if info.Size() > maxSmallFile {
+			return nil
+		}
 		content, readErr := os.ReadFile(path) //nolint:gosec // a path the user named
 		if readErr != nil {
 			return readErr
 		}
-		files[filepath.ToSlash(relative)] = content
+		bundle.small[name] = content
 		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read bundle: %w", err)
 	}
-	return &Bundle{files: files}, nil
+	bundle.open = func(name string) (io.ReadCloser, error) {
+		path, ok := paths[name]
+		if !ok {
+			return nil, fs.ErrNotExist
+		}
+		return os.Open(path) //nolint:gosec // a path inside the bundle the user named
+	}
+	return bundle, nil
 }
 
-// maxBundleFile caps what a single entry may expand to. A bundle arrives from
-// whoever is being audited, so it is untrusted input like any other.
-const maxBundleFile = 512 << 20
-
 func openArchive(path string) (*Bundle, error) {
+	bundle := &Bundle{small: map[string][]byte{}}
+	// One pass to learn what the archive holds and to keep the small files.
+	// runs.jsonl is deliberately not kept: it is re-read, as a stream, when
+	// the time comes to verify it.
+	err := walkArchive(path, func(name string, reader io.Reader) error {
+		bundle.names = append(bundle.names, name)
+		if name == RunsFile {
+			return nil
+		}
+		content, readErr := io.ReadAll(io.LimitReader(reader, maxSmallFile))
+		if readErr != nil {
+			return fmt.Errorf("read %s from %s: %w", name, path, readErr)
+		}
+		bundle.small[name] = content
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	bundle.open = func(name string) (io.ReadCloser, error) {
+		return openArchiveEntry(path, name)
+	}
+	return bundle, nil
+}
+
+// walkArchive calls fn once per regular file in a .tar.gz, with a reader
+// positioned at its content. The reader is only valid until fn returns.
+func walkArchive(path string, fn func(name string, reader io.Reader) error) error {
 	handle, err := os.Open(path) //nolint:gosec // a path the user named
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
+		return fmt.Errorf("open %s: %w", path, err)
 	}
 	defer func() { _ = handle.Close() }()
 
 	gz, err := gzip.NewReader(handle)
 	if err != nil {
-		return nil, fmt.Errorf("read %s as gzip: %w", path, err)
+		return fmt.Errorf("read %s as gzip: %w", path, err)
 	}
 	defer func() { _ = gz.Close() }()
 
-	files := map[string][]byte{}
+	reader := tar.NewReader(gz)
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+		name, err := entryName(path, header.Name)
+		if err != nil {
+			return err
+		}
+		if err := fn(name, reader); err != nil {
+			return err
+		}
+	}
+}
+
+// entryName normalises a tar entry to the name it is known by inside the
+// bundle, refusing anything that points outside it.
+func entryName(archive, raw string) (string, error) {
+	name := filepath.ToSlash(filepath.Clean(raw))
+	if strings.HasPrefix(name, "../") || filepath.IsAbs(name) {
+		return "", fmt.Errorf("%s contains an entry outside the bundle: %q", archive, raw)
+	}
+	// A bundle is written with a top-level directory more often than not.
+	return strings.TrimPrefix(name, topLevel(name)), nil
+}
+
+// archiveEntry keeps the readers a tar entry is read through alive for as long
+// as the caller holds it.
+type archiveEntry struct {
+	io.Reader
+	gz     *gzip.Reader
+	handle *os.File
+}
+
+func (e *archiveEntry) Close() error {
+	_ = e.gz.Close()
+	return e.handle.Close()
+}
+
+// openArchiveEntry scans to one entry and hands back a reader over it. Scanning
+// again per file costs a second pass over the compressed bytes and saves
+// holding the uncompressed ones, which is the trade the whole file is about.
+func openArchiveEntry(path, want string) (io.ReadCloser, error) {
+	handle, err := os.Open(path) //nolint:gosec // a path the user named
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	gz, err := gzip.NewReader(handle)
+	if err != nil {
+		_ = handle.Close()
+		return nil, fmt.Errorf("read %s as gzip: %w", path, err)
+	}
 	reader := tar.NewReader(gz)
 	for {
 		header, err := reader.Next()
@@ -176,23 +303,26 @@ func openArchive(path string) (*Bundle, error) {
 			break
 		}
 		if err != nil {
+			_ = gz.Close()
+			_ = handle.Close()
 			return nil, fmt.Errorf("read %s: %w", path, err)
 		}
 		if header.Typeflag != tar.TypeReg {
 			continue
 		}
-		name := filepath.ToSlash(filepath.Clean(header.Name))
-		if strings.HasPrefix(name, "../") || filepath.IsAbs(name) {
-			return nil, fmt.Errorf("%s contains an entry outside the bundle: %q", path, header.Name)
-		}
-		content, err := io.ReadAll(io.LimitReader(reader, maxBundleFile))
+		name, err := entryName(path, header.Name)
 		if err != nil {
-			return nil, fmt.Errorf("read %s from %s: %w", name, path, err)
+			_ = gz.Close()
+			_ = handle.Close()
+			return nil, err
 		}
-		// A bundle is written with a top-level directory more often than not.
-		files[strings.TrimPrefix(name, topLevel(name))] = content
+		if name == want {
+			return &archiveEntry{Reader: io.LimitReader(reader, maxBundleFile), gz: gz, handle: handle}, nil
+		}
 	}
-	return &Bundle{files: files}, nil
+	_ = gz.Close()
+	_ = handle.Close()
+	return nil, fs.ErrNotExist
 }
 
 // topLevel returns the leading directory of a path when the bundle was written
@@ -205,10 +335,42 @@ func topLevel(name string) string {
 	return ""
 }
 
-// File returns one file's bytes.
+// File returns one of the small files' bytes. runs.jsonl is not one of them —
+// it is read with OpenFile, and holding it was the bug this reports.
 func (b *Bundle) File(name string) ([]byte, bool) {
-	content, ok := b.files[name]
+	content, ok := b.small[name]
 	return content, ok
+}
+
+// OpenFile streams one file out of the bundle. The caller closes it.
+func (b *Bundle) OpenFile(name string) (io.ReadCloser, error) {
+	if content, ok := b.small[name]; ok {
+		return io.NopCloser(bytes.NewReader(content)), nil
+	}
+	return b.open(name)
+}
+
+// Has reports whether the bundle contains a file.
+func (b *Bundle) Has(name string) bool {
+	if _, ok := b.small[name]; ok {
+		return true
+	}
+	return slices.Contains(b.names, name)
+}
+
+// digest hashes a file without holding it, so the memory this costs is the
+// same for a bundle of a week and a bundle of three years.
+func (b *Bundle) digest(name string) (string, error) {
+	reader, err := b.OpenFile(name)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = reader.Close() }()
+	sum := sha256.New()
+	if _, err := io.Copy(sum, reader); err != nil {
+		return "", fmt.Errorf("read %s: %w", name, err)
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
 // Verify checks a bundle end to end: the manifest's file digests, every
@@ -235,15 +397,25 @@ func Verify(bundle *Bundle) (Report, error) {
 	}
 
 	// The manifest's digests come first: everything after this checks content
-	// that the digests prove has not been edited since export.
-	for name, want := range manifest.Files {
-		content, ok := bundle.File(name)
-		if !ok {
+	// that the digests prove has not been edited since export. Named in sorted
+	// order, so two runs over the same broken bundle report the same problems
+	// in the same order.
+	names := make([]string, 0, len(manifest.Files))
+	for name := range manifest.Files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		want := manifest.Files[name]
+		got, err := bundle.digest(name)
+		if errors.Is(err, fs.ErrNotExist) {
 			report.Problems = append(report.Problems, fmt.Sprintf("%s is listed in the manifest and missing from the bundle", name))
 			continue
 		}
-		sum := sha256.Sum256(content)
-		if got := hex.EncodeToString(sum[:]); got != want {
+		if err != nil {
+			return report, err
+		}
+		if got != want {
 			report.Problems = append(report.Problems,
 				fmt.Sprintf("%s has been changed since export (digest %s, manifest says %s)", name, got, want))
 		}
@@ -261,19 +433,30 @@ func Verify(bundle *Bundle) (Report, error) {
 		tails[probe.ID] = probe.ChainStart
 	}
 
-	runs, ok := bundle.File(RunsFile)
-	if !ok {
+	if !bundle.Has(RunsFile) {
 		return report, fmt.Errorf("this is not a bundle: no %s", RunsFile)
 	}
+	runs, err := bundle.OpenFile(RunsFile)
+	if err != nil {
+		return report, fmt.Errorf("read %s: %w", RunsFile, err)
+	}
+	defer func() { _ = runs.Close() }()
 
+	// One line at a time. The whole file is never held, so verifying three
+	// years of history costs what verifying a week does.
 	read := 0
-	for index, line := range strings.Split(strings.TrimRight(string(runs), "\n"), "\n") {
-		if strings.TrimSpace(line) == "" {
+	index := 0
+	scanner := bufio.NewScanner(runs)
+	scanner.Buffer(make([]byte, 0, 64<<10), maxRunLine)
+	for scanner.Scan() {
+		index++
+		line := scanner.Bytes()
+		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
 		var run BundleRun
-		if err := json.Unmarshal([]byte(line), &run); err != nil {
-			report.Problems = append(report.Problems, fmt.Sprintf("%s line %d: %s", RunsFile, index+1, err))
+		if err := json.Unmarshal(line, &run); err != nil {
+			report.Problems = append(report.Problems, fmt.Sprintf("%s line %d: %s", RunsFile, index, err))
 			continue
 		}
 		read++
@@ -281,7 +464,7 @@ func Verify(bundle *Bundle) (Report, error) {
 		key, known := keys[run.ProbeID]
 		if !known {
 			report.Problems = append(report.Problems,
-				fmt.Sprintf("%s line %d: signed by probe %s, which the manifest does not list", RunsFile, index+1, run.ProbeID))
+				fmt.Sprintf("%s line %d: signed by probe %s, which the manifest does not list", RunsFile, index, run.ProbeID))
 			continue
 		}
 		if expected := tails[run.ProbeID]; run.Entry.PrevHash != expected {
@@ -289,10 +472,10 @@ func Verify(bundle *Bundle) (Report, error) {
 			// how a deletion becomes visible.
 			report.Problems = append(report.Problems,
 				fmt.Sprintf("%s line %d: probe %s follows %q, expected %q — a result is missing or out of order",
-					RunsFile, index+1, run.ProbeID, short(run.Entry.PrevHash), short(expected)))
+					RunsFile, index, run.ProbeID, short(run.Entry.PrevHash), short(expected)))
 		}
 		if err := VerifyEntry(key, run.ProbeID, run.Result, run.Entry); err != nil {
-			report.Problems = append(report.Problems, fmt.Sprintf("%s line %d: %s", RunsFile, index+1, err))
+			report.Problems = append(report.Problems, fmt.Sprintf("%s line %d: %s", RunsFile, index, err))
 		} else {
 			report.Verified++
 		}
@@ -300,9 +483,16 @@ func Verify(bundle *Bundle) (Report, error) {
 			(run.Result.RanAt.Before(manifest.From) || run.Result.RanAt.After(manifest.To)) {
 			report.Problems = append(report.Problems,
 				fmt.Sprintf("%s line %d: ran at %s, outside the period the manifest claims",
-					RunsFile, index+1, run.Result.RanAt.Format(time.RFC3339)))
+					RunsFile, index, run.Result.RanAt.Format(time.RFC3339)))
 		}
 		tails[run.ProbeID] = run.Entry.SelfHash
+	}
+
+	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return report, fmt.Errorf("%s line %d is longer than %d bytes, which no result is", RunsFile, index+1, maxRunLine)
+		}
+		return report, fmt.Errorf("read %s: %w", RunsFile, err)
 	}
 
 	for probe, tail := range tails {
