@@ -63,6 +63,10 @@ jobs:
         with:
           go-version: '1.27'
           check-latest: true
-      - uses: golangci/golangci-lint-action@v6
+      # v7 or later, because golangci-lint v2 is a different configuration
+      # format and v6 of this action rejects the version string outright:
+      # "invalid version string 'v2.13.2', golangci-lint v2 is not supported".
+      # The job had therefore never linted anything — it failed before it ran.
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.13.2

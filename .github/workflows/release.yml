@@ -65,7 +65,11 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           # Semver tags only. A chart whose default pulls a moving tag will one
-          # day upgrade a customer's probe without anyone asking for it.
+          # day upgrade a customer's probe without anyone asking for it — and
+          # this action adds `latest` unless told not to, which is exactly that
+          # tag. v0.1.0 published one despite the comment above saying it
+          # would not.
+          flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -90,5 +94,12 @@ jobs:
       - name: Sign the image
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
+          # An OCI reference must be lowercase, and github.repository keeps the
+          # owner's capitalisation. docker/metadata-action lowercases the tags
+          # it emits; this expression did not, so cosign refused to parse the
+          # reference and v0.1.0 shipped an unsigned image with a red workflow
+          # behind it. The image itself had already been pushed by then, which
+          # is why nothing else looked wrong.
+          REPOSITORY: ${{ github.repository }}
         run: |
-          cosign sign --yes "ghcr.io/${{ github.repository }}@${DIGEST}"
+          cosign sign --yes "ghcr.io/${REPOSITORY,,}@${DIGEST}"
