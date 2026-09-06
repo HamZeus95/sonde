@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -332,4 +333,87 @@ func containsBytes(haystack, needle []byte) bool {
 		}
 	}
 	return false
+}
+
+// TestALostAnswerIsNotDivergence covers the failure this product cannot afford
+// to treat as tampering: the control plane stores a batch and the answer never
+// arrives — a dropped connection, a proxy timeout, a pod evicted between the
+// write and the response.
+//
+// The control plane is then one batch ahead of what the probe recorded, which
+// looks exactly like a rewritten history unless the probe remembers what it had
+// in flight. Getting this wrong stops a probe until a human restarts it, and a
+// stopped probe means checks silently not being verified.
+func TestALostAnswerIsNotDivergence(t *testing.T) {
+	cp := newTestControlPlane(t)
+	target := liveTarget(t)
+	dir := t.TempDir()
+	p := newProbe(t, cp, dir, nil)
+
+	cp.mu.Lock()
+	cp.dropAnswers = true
+	cp.mu.Unlock()
+
+	cp.enqueue(job(1, "a", target.URL, 200))
+	if _, err := p.cycle(context.Background()); err == nil {
+		t.Fatal("a submission whose answer was lost must be an error at the time")
+	}
+	if p.state.LastHash != "" {
+		t.Errorf("the chain advanced on an answer that never arrived: %q", p.state.LastHash)
+	}
+	if p.state.PendingHash == "" {
+		t.Fatal("the probe did not record what it had in flight")
+	}
+
+	cp.mu.Lock()
+	cp.dropAnswers = false
+	cp.mu.Unlock()
+
+	// The next poll finds the control plane one batch ahead. That is the batch
+	// this probe signed, so it carries on rather than stopping.
+	cp.enqueue(job(2, "b", target.URL, 200))
+	if _, err := p.cycle(context.Background()); err != nil {
+		t.Fatalf("a lost answer was treated as divergence: %v", err)
+	}
+	if p.state.PendingHash != "" {
+		t.Errorf("pending hash was not cleared: %q", p.state.PendingHash)
+	}
+
+	stored := cp.probeState()
+	if len(stored.entries) != 2 {
+		t.Fatalf("stored %d entries, want 2", len(stored.entries))
+	}
+	if err := evidence.VerifyChain(stored.publicKey, stored.id, "", stored.results, stored.entries); err != nil {
+		t.Fatalf("the chain across the lost answer does not verify: %v", err)
+	}
+}
+
+// TestARewrittenHistoryIsStillDivergence is the other half: remembering what
+// was in flight must not become a way to accept any tail the control plane
+// offers.
+func TestARewrittenHistoryIsStillDivergence(t *testing.T) {
+	cp := newTestControlPlane(t)
+	target := liveTarget(t)
+	dir := t.TempDir()
+	p := newProbe(t, cp, dir, nil)
+
+	cp.mu.Lock()
+	cp.dropAnswers = true
+	cp.mu.Unlock()
+
+	cp.enqueue(job(1, "a", target.URL, 200))
+	if _, err := p.cycle(context.Background()); err == nil {
+		t.Fatal("expected the dropped answer to be an error")
+	}
+
+	cp.mu.Lock()
+	cp.dropAnswers = false
+	cp.probes[p.ProbeID()].chainTail = "0000000000000000000000000000000000000000000000000000000000000000"
+	cp.mu.Unlock()
+
+	cp.enqueue(job(2, "b", target.URL, 200))
+	_, err := p.cycle(context.Background())
+	if !errors.Is(err, ErrChainDiverged) {
+		t.Fatalf("a tail this probe never wrote must still stop it, got %v", err)
+	}
 }

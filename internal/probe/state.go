@@ -30,6 +30,15 @@ type State struct {
 	// forgotten, or rewritten, a probe's history is detectable rather than
 	// silently accommodated.
 	LastHash string `json:"last_hash"`
+	// PendingHash is the tail of a batch that was sent and not yet
+	// acknowledged. A submission can be stored and its answer lost on the way
+	// back — a dropped connection, a proxy timeout, a pod evicted between the
+	// write and the response — after which the control plane is one batch
+	// ahead of LastHash through no fault of anyone's. Recording what was in
+	// flight is what lets the next poll tell that case apart from a control
+	// plane that rewrote this probe's history, which is the one that needs a
+	// human.
+	PendingHash string `json:"pending_hash,omitempty"`
 }
 
 // stateDir file names. The key is separate from the JSON so its permissions can

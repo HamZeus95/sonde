@@ -655,6 +655,8 @@ Closed decisions. Reopening one requires a written reason appended here, not a s
 | 38 | A probe with no kubeconfig uses its in-cluster credentials for any cluster name | Found by running the chart: a pod has no kubeconfig, so the strict context matching from decision 15 failed every kubernetes check with "no kubeconfig context named prod-eu-1" — in the deployment the chart exists for. A pod is in exactly one cluster and the operator declared which environment it covers at install, so there is nothing to disambiguate. |
 | 39 | Probes are ranked by the most recent evidence they exist, not by `last_seen_at` alone | A probe that has never reported ranked below one that reported an hour ago, so replacing a probe left its queue assigned to the old row and its checks silently unverified. Enrolling a minute ago is evidence of life; not having finished a first batch is not. Unleased work now also moves to the current probe immediately rather than waiting for the old one to age out. |
 
+| 40 | A batch whose answer was lost is not a diverged chain | The probe records the tail of a batch before sending it. A submission that is stored and whose acknowledgement never arrives — a dropped connection, a proxy timeout, a pod evicted between the write and the response — leaves the control plane exactly one batch ahead, which was indistinguishable from a rewritten history and stopped the probe until a human restarted it. A stopped probe means checks silently not being verified, which is the outcome §9 exists to prevent, and it should not take a page to recover from one dropped TCP connection. A tail the probe never wrote still stops it. |
+
 Open questions (answer before the phase that needs them):
 - None open.
 

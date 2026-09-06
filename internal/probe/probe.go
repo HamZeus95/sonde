@@ -316,6 +316,16 @@ func (p *Probe) cycle(ctx context.Context) (worked bool, err error) {
 		results[i].Entry = entries[i]
 	}
 
+	// What this batch will leave the chain on is recorded before it is sent.
+	// A submission that is stored and whose answer is lost would otherwise
+	// look, on the next poll, exactly like a control plane that had rewritten
+	// this probe's history — and that stops the probe until a human restarts
+	// it. One dropped connection is not worth a page.
+	p.state.PendingHash = tail
+	if err := p.store.SaveState(p.state); err != nil {
+		return true, err
+	}
+
 	answer, err := p.client.SubmitResults(ctx, ResultsRequest{
 		ChainTail: p.state.LastHash,
 		Results:   results,
@@ -328,6 +338,7 @@ func (p *Probe) cycle(ctx context.Context) (worked bool, err error) {
 	}
 
 	p.state.LastHash = tail
+	p.state.PendingHash = ""
 	if err := p.store.SaveState(p.state); err != nil {
 		return true, err
 	}
@@ -367,13 +378,30 @@ func (p *Probe) execute(ctx context.Context, jobs []Job) []SignedResult {
 // with the probe's own.
 func (p *Probe) reconcileChain(remote string) error {
 	if remote == p.state.LastHash {
+		// Nothing was stored beyond what this probe knows it wrote, so a batch
+		// that was in flight did not land. It will be leased again.
+		if p.state.PendingHash != "" {
+			p.state.PendingHash = ""
+			return p.store.SaveState(p.state)
+		}
 		return nil
+	}
+	if p.state.PendingHash != "" && remote == p.state.PendingHash {
+		// The control plane is exactly one batch ahead, and that batch is the
+		// one this probe sent and never heard back about. It stored what this
+		// probe signed; nothing was rewritten and nothing is missing.
+		p.log.Info("the last batch was stored, its answer was lost",
+			"chain_tail", short(remote))
+		p.state.LastHash = remote
+		p.state.PendingHash = ""
+		return p.store.SaveState(p.state)
 	}
 	if p.opts.AllowChainReset {
 		p.log.Warn("adopting the control plane's chain tail",
 			"local", short(p.state.LastHash), "remote", short(remote),
 			"note", "evidence before this point is no longer a single unbroken chain")
 		p.state.LastHash = remote
+		p.state.PendingHash = ""
 		return p.store.SaveState(p.state)
 	}
 	return fmt.Errorf("%w: it holds %q, this probe holds %q; if the control plane was restored from a backup, restart with --allow-chain-reset",

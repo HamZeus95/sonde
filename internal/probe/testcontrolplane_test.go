@@ -41,6 +41,10 @@ type testControlPlane struct {
 	queue     []Job
 	certTTL   time.Duration
 	rejectAll bool
+	// dropAnswers stores a submission and then aborts the connection, which is
+	// what a proxy timeout or an evicted pod looks like from the probe: the
+	// work landed and the acknowledgement did not.
+	dropAnswers bool
 }
 
 type registeredProbe struct {
@@ -344,6 +348,10 @@ func (cp *testControlPlane) handleResults(w http.ResponseWriter, r *http.Request
 	}
 	if len(entries) > 0 {
 		p.chainTail = entries[len(entries)-1].SelfHash
+	}
+	if cp.dropAnswers {
+		// Stored, and the caller never hears so.
+		panic(http.ErrAbortHandler)
 	}
 	writeJSON(w, http.StatusOK, ResultsResponse{Accepted: len(req.Results), ChainTail: p.chainTail})
 }
