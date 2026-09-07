@@ -9,18 +9,23 @@ import (
 	"github.com/HamZeus95/sonde/internal/model"
 )
 
-// statusLabel is the fixed-width word each result line opens with. Words rather
-// than symbols: they survive a pipe, a CI log viewer and a grep.
-func statusLabel(s model.Status) string {
+// statusLabel is the fixed-width word each result line opens with, painted when
+// the destination is a terminal.
+//
+// Words rather than symbols: they survive a pipe, a CI log viewer and a grep,
+// and the colour is added on top of them rather than instead of them. Amber for
+// error, not red: "Sonde could not tell" is not "your runbook is wrong", and
+// the whole product falls over if those two ever look the same.
+func statusLabel(s model.Status, c Colour) string {
 	switch s {
 	case model.StatusPass:
-		return "PASS "
+		return c.status("PASS ", ansiGreen)
 	case model.StatusFail:
-		return "FAIL "
+		return c.status("FAIL ", ansiRed)
 	case model.StatusError:
-		return "ERROR"
+		return c.status("ERROR", ansiYellow)
 	case model.StatusSkipped:
-		return "SKIP "
+		return c.status("SKIP ", ansiDim)
 	default:
 		return string(s)
 	}
@@ -28,7 +33,7 @@ func statusLabel(s model.Status) string {
 
 // HumanRun writes a run for a terminal, grouped by runbook, and closes with the
 // line the product exists to print: which runbooks are wrong.
-func HumanRun(w io.Writer, run model.Run) error {
+func HumanRun(w io.Writer, run model.Run, colour Colour) error {
 	if len(run.Results) == 0 {
 		_, err := fmt.Fprintln(w, "No checks to run.")
 		return err
@@ -42,12 +47,14 @@ func HumanRun(w io.Writer, run model.Run) error {
 					return err
 				}
 			}
-			if _, err := fmt.Fprintf(w, "%s  %s\n", r.RunbookPath, r.RunbookID); err != nil {
+			if _, err := fmt.Fprintf(w, "%s  %s\n",
+				colour.heading(r.RunbookPath), colour.dim(r.RunbookID)); err != nil {
 				return err
 			}
 			lastRunbook = r.RunbookPath
 		}
-		if _, err := fmt.Fprintf(w, "  %s  %-24s %s\n", statusLabel(r.Status), r.CheckID, r.Observed.Summary); err != nil {
+		if _, err := fmt.Fprintf(w, "  %s  %-24s %s\n",
+			statusLabel(r.Status, colour), r.CheckID, colour.dim(r.Observed.Summary)); err != nil {
 			return err
 		}
 	}
@@ -69,7 +76,11 @@ func HumanRun(w io.Writer, run model.Run) error {
 
 	wrong := WrongRunbooks(run)
 	if len(wrong) > 0 {
-		if _, err := fmt.Fprintf(w, "\n%s wrong: %s\n", plural(len(wrong), "runbook"), strings.Join(wrong, ", ")); err != nil {
+		// The one line this command exists to print, so it is the one line that
+		// is allowed to shout.
+		if _, err := fmt.Fprintf(w, "\n%s\n",
+			colour.status(fmt.Sprintf("%s wrong: %s", plural(len(wrong), "runbook"), strings.Join(wrong, ", ")),
+				ansiRed)); err != nil {
 			return err
 		}
 	}

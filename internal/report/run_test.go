@@ -121,7 +121,7 @@ func TestTAP(t *testing.T) {
 
 func TestHumanRunNamesTheWrongRunbooks(t *testing.T) {
 	var out bytes.Buffer
-	if err := HumanRun(&out, sampleRun()); err != nil {
+	if err := HumanRun(&out, sampleRun(), Colour{}); err != nil {
 		t.Fatalf("HumanRun: %v", err)
 	}
 	got := out.String()
@@ -146,5 +146,52 @@ func TestErrorsAloneMeanNoRunbookIsWrong(t *testing.T) {
 	}}}
 	if got := WrongRunbooks(run); len(got) != 0 {
 		t.Errorf("WrongRunbooks() = %v, want none", got)
+	}
+}
+
+// TestColourPaintsOnlyWhenAskedTo covers the property that keeps every other
+// consumer working: a buffer, a file and a pipe are not terminals, so the plain
+// words a CI log and a grep rely on are what they get.
+func TestColourPaintsOnlyWhenAskedTo(t *testing.T) {
+	var plain bytes.Buffer
+	if err := HumanRun(&plain, sampleRun(), NewColour(&plain, ColourAuto)); err != nil {
+		t.Fatalf("HumanRun: %v", err)
+	}
+	if strings.Contains(plain.String(), "\033[") {
+		t.Errorf("a buffer is not a terminal and must not receive escapes:\n%q", plain.String())
+	}
+
+	var painted bytes.Buffer
+	if err := HumanRun(&painted, sampleRun(), NewColour(&painted, ColourAlways)); err != nil {
+		t.Fatalf("HumanRun: %v", err)
+	}
+	for _, want := range []string{
+		"\033[32mPASS ", // green
+		"\033[31mFAIL ", // red
+		"\033[33mERROR", // amber, not red: "could not tell" is not "wrong"
+	} {
+		if !strings.Contains(painted.String(), want) {
+			t.Errorf("missing %q in:\n%q", want, painted.String())
+		}
+	}
+
+	// The words themselves survive, because the colour is added on top of them
+	// rather than instead of them.
+	if !strings.Contains(painted.String(), "1 runbook wrong: db-failover") {
+		t.Errorf("the headline line lost its text:\n%q", painted.String())
+	}
+}
+
+// TestNoColorIsHonoured covers no-color.org: a user who has asked every tool on
+// the machine to stop has asked this one too.
+func TestNoColorIsHonoured(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var out bytes.Buffer
+	if NewColour(&out, ColourAuto).enabled {
+		t.Error("NO_COLOR did not disable colour")
+	}
+	// Explicitly asking for it still wins: that is what "always" means.
+	if !NewColour(&out, ColourAlways).enabled {
+		t.Error("--color=always should override NO_COLOR")
 	}
 }

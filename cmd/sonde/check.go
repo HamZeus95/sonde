@@ -42,6 +42,7 @@ func (o *runnerOptions) bind(flags *pflag.FlagSet) {
 type checkOptions struct {
 	runnerOptions
 	format      string
+	colour      string
 	output      string
 	concurrency int
 }
@@ -65,6 +66,9 @@ func newCheckCommand() *cobra.Command {
 			if !format.Valid(report.RunFormats) {
 				return exit(exitUsage, report.ErrUnknownFormat(format, report.RunFormats))
 			}
+			if !report.ValidColourMode(report.ColourMode(opts.colour)) {
+				return exit(exitUsage, fmt.Errorf("unknown color %q: valid values are auto, always, never", opts.colour))
+			}
 			roots := args
 			if len(roots) == 0 {
 				roots = []string{"."}
@@ -76,6 +80,8 @@ func newCheckCommand() *cobra.Command {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.format, "format", string(report.FormatHuman),
 		"output format ("+report.Describe(report.RunFormats)+")")
+	flags.StringVar(&opts.colour, "color", string(report.ColourAuto),
+		"colour the status words (auto|always|never); auto means when stdout is a terminal")
 	flags.StringVarP(&opts.output, "output", "o", "", "write the report to a file instead of stdout")
 	flags.IntVar(&opts.concurrency, "concurrency", checks.DefaultConcurrency, "how many checks to run at once")
 	opts.bind(flags)
@@ -107,7 +113,7 @@ func runCheck(ctx context.Context, cmd *cobra.Command, roots []string, format re
 	if err != nil {
 		return exit(exitExecution, err)
 	}
-	if err := writeRun(out, format, run); err != nil {
+	if err := writeRun(out, format, run, report.NewColour(out, report.ColourMode(opts.colour))); err != nil {
 		_ = closeOut()
 		return exit(exitExecution, err)
 	}
@@ -129,7 +135,10 @@ func runCheck(ctx context.Context, cmd *cobra.Command, roots []string, format re
 	}
 }
 
-func writeRun(w io.Writer, format report.Format, run model.Run) error {
+// writeRun renders the run. Colour reaches only the human writer: the other
+// three are contracts something else parses, and an escape sequence in a JUnit
+// attribute is a broken report.
+func writeRun(w io.Writer, format report.Format, run model.Run, colour report.Colour) error {
 	switch format {
 	case report.FormatJSON:
 		return report.JSONRun(w, run)
@@ -138,7 +147,7 @@ func writeRun(w io.Writer, format report.Format, run model.Run) error {
 	case report.FormatTAP:
 		return report.TAPRun(w, run)
 	default:
-		return report.HumanRun(w, run)
+		return report.HumanRun(w, run, colour)
 	}
 }
 
